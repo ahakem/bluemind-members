@@ -11,6 +11,7 @@ interface HeaderProps {
     name?: string;
     email?: string;
     role?: string;
+    photoUrl?: string;
   } | null;
   onSignOut?: () => void;
 }
@@ -91,8 +92,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle, showMenuButton, userData,
             {userData && (
               <>
                 <IconButton onClick={handleMenuOpen} sx={{ p: 0 }}>
-                  <Avatar sx={{ bgcolor: 'secondary.main', width: 36, height: 36 }}>
-                    {userData?.name?.charAt(0).toUpperCase() || userData?.email?.charAt(0).toUpperCase()}
+                  <Avatar 
+                    src={userData?.photoUrl || undefined}
+                    sx={{ bgcolor: 'secondary.main', width: 36, height: 36 }}
+                  >
+                    {!userData?.photoUrl && (userData?.name?.charAt(0).toUpperCase() || userData?.email?.charAt(0).toUpperCase())}
                   </Avatar>
                 </IconButton>
                 <Menu

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
@@ -26,6 +26,8 @@ import {
   Receipt,
   LocationOn,
 } from '@mui/icons-material';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -36,9 +38,26 @@ const AdminLayout: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [drawerOpen, setDrawerOpen] = useState(!isMobile);
-  const { userData, signOut } = useAuth();
+  const [photoUrl, setPhotoUrl] = useState<string | undefined>();
+  const { userData, currentUser, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    const fetchPhoto = async () => {
+      if (currentUser) {
+        try {
+          const memberDoc = await getDoc(doc(db, 'members', currentUser.uid));
+          if (memberDoc.exists()) {
+            setPhotoUrl(memberDoc.data().photoUrl);
+          }
+        } catch (e) {
+          // Ignore
+        }
+      }
+    };
+    fetchPhoto();
+  }, [currentUser]);
 
   const handleDrawerToggle = () => {
     setDrawerOpen(!drawerOpen);
@@ -132,7 +151,7 @@ const AdminLayout: React.FC = () => {
       <Header 
         showMenuButton 
         onMenuToggle={handleDrawerToggle}
-        userData={userData}
+        userData={userData ? { ...userData, photoUrl } : null}
         onSignOut={handleSignOut}
       />
       <Box sx={{ display: 'flex', flex: 1 }}>
