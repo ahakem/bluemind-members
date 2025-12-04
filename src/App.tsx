@@ -25,6 +25,7 @@ import SessionManagement from './pages/admin/SessionManagement';
 import AttendanceTracking from './pages/admin/AttendanceTracking';
 import PaymentVerification from './pages/admin/PaymentVerification';
 import ContentManagement from './pages/admin/ContentManagement';
+import LocationManagement from './pages/admin/LocationManagement';
 
 // Member pages
 import MemberLayout from './pages/member/MemberLayout';
@@ -71,6 +72,7 @@ function App() {
               {/* Management features */}
               <Route path="members" element={<MemberManagement />} />
               <Route path="sessions" element={<SessionManagement />} />
+              <Route path="locations" element={<LocationManagement />} />
               <Route path="attendance" element={<AttendanceTracking />} />
               <Route path="payments" element={<PaymentVerification />} />
               <Route path="content" element={<ContentManagement />} />

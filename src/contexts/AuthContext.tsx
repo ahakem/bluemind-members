@@ -113,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const hasRole = (role: UserRole): boolean => {
     if (!userData) return false;
-    if (role === 'admin') return userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin';
+    if (role === 'admin') return userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin' || userData.role === 'board';
     return userData.role === role;
   };
 

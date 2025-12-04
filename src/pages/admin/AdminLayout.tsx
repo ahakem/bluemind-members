@@ -22,6 +22,7 @@ import {
   CalendarMonth,
   EmojiEvents,
   Receipt,
+  LocationOn,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import Header from '../../components/Header';
@@ -57,6 +58,7 @@ const AdminLayout: React.FC = () => {
     { text: 'Admin Dashboard', icon: <Dashboard />, path: '/admin' },
     { text: 'Members', icon: <People />, path: '/admin/members' },
     { text: 'Sessions', icon: <Event />, path: '/admin/sessions' },
+    { text: 'Locations & Bank', icon: <LocationOn />, path: '/admin/locations' },
     { text: 'Attendance', icon: <CheckCircle />, path: '/admin/attendance' },
     { text: 'Payments', icon: <Payment />, path: '/admin/payments' },
     { text: 'Content', icon: <Article />, path: '/admin/content' },

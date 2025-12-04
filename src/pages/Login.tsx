@@ -29,7 +29,7 @@ const Login: React.FC = () => {
       
       if (!userData.approved) {
         navigate('/pending-approval');
-      } else if (userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin') {
+      } else if (userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin' || userData.role === 'board') {
         navigate('/admin');
       } else {
         navigate('/member');

@@ -180,7 +180,7 @@ const AttendanceTracking: React.FC = () => {
               {sessions.map(session => (
                 <MenuItem key={session.id} value={session.id}>
                   {format(session.date, 'EEEE, MMMM d, yyyy')} - {session.startTime} -{' '}
-                  {session.type} @ {session.location}
+                  {session.type} @ {session.locationName || 'Unknown'}
                 </MenuItem>
               ))}
             </Select>

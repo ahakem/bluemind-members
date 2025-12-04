@@ -9,7 +9,8 @@ import {
   DialogActions,
   Alert,
   Chip,
-  IconButton,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { CheckCircle } from '@mui/icons-material';
@@ -23,14 +24,17 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { useAuth } from '../../contexts/AuthContext';
 import { Invoice } from '../../types';
 import { format } from 'date-fns';
 
 const PaymentVerification: React.FC = () => {
+  const { currentUser } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [confirmDialog, setConfirmDialog] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
 
   useEffect(() => {
     fetchInvoices();
@@ -38,20 +42,22 @@ const PaymentVerification: React.FC = () => {
 
   const fetchInvoices = async () => {
     try {
-      const invoicesQuery = query(
-        collection(db, 'invoices'),
-        where('status', 'in', ['pending', 'transfer_initiated'])
-      );
+      const invoicesQuery = query(collection(db, 'invoices'));
       const querySnapshot = await getDocs(invoicesQuery);
-      const invoicesList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        dueDate: doc.data().dueDate?.toDate(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-        transferInitiatedAt: doc.data().transferInitiatedAt?.toDate(),
-      })) as Invoice[];
-      setInvoices(invoicesList);
+      const invoicesList = querySnapshot.docs
+        .filter(doc => doc.data().status !== 'cancelled')
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          dueDate: doc.data().dueDate?.toDate(),
+          sessionDate: doc.data().sessionDate?.toDate(),
+          createdAt: doc.data().createdAt?.toDate(),
+          updatedAt: doc.data().updatedAt?.toDate(),
+          transferInitiatedAt: doc.data().transferInitiatedAt?.toDate(),
+          paidAt: doc.data().paidAt?.toDate(),
+          confirmedAt: doc.data().confirmedAt?.toDate(),
+        })) as Invoice[];
+      setInvoices(invoicesList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
     } catch (error) {
       console.error('Error fetching invoices:', error);
     } finally {
@@ -60,22 +66,15 @@ const PaymentVerification: React.FC = () => {
   };
 
   const handleConfirmPayment = async () => {
-    if (!selectedInvoice) return;
+    if (!selectedInvoice || !currentUser) return;
 
     try {
       // Update invoice status
       await updateDoc(doc(db, 'invoices', selectedInvoice.id), {
         status: 'paid',
         paidAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
-
-      // Update member's subscription status
-      await updateDoc(doc(db, 'members', selectedInvoice.memberId), {
-        membershipStatus: 'active',
-        membershipExpiry: Timestamp.fromDate(
-          new Date(new Date().setFullYear(new Date().getFullYear() + 1))
-        ),
+        confirmedBy: currentUser.uid,
+        confirmedAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       });
 
@@ -93,18 +92,18 @@ const PaymentVerification: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
-    { field: 'memberName', headerName: 'Member', width: 200 },
-    { field: 'memberEmail', headerName: 'Email', width: 250 },
+    { field: 'memberName', headerName: 'Member', width: 180 },
+    { field: 'description', headerName: 'Description', width: 250 },
     {
       field: 'amount',
       headerName: 'Amount',
-      width: 120,
-      renderCell: (params: GridRenderCellParams) => `€${params.value}`,
+      width: 100,
+      renderCell: (params: GridRenderCellParams) => `€${params.value?.toFixed(2) || '0.00'}`,
     },
     {
       field: 'uniquePaymentReference',
-      headerName: 'Payment Reference',
-      width: 180,
+      headerName: 'Payment Ref',
+      width: 150,
       renderCell: (params: GridRenderCellParams) => (
         <Typography
           variant="body2"
@@ -119,11 +118,13 @@ const PaymentVerification: React.FC = () => {
     {
       field: 'status',
       headerName: 'Status',
-      width: 150,
+      width: 140,
       renderCell: (params: GridRenderCellParams) => {
         const status = params.value as string;
-        const color =
-          status === 'transfer_initiated' ? 'warning' : status === 'pending' ? 'default' : 'success';
+        let color: any = 'default';
+        if (status === 'transfer_initiated') color = 'warning';
+        else if (status === 'paid') color = 'success';
+        else if (status === 'pending') color = 'info';
         return (
           <Chip
             label={status.replace('_', ' ')}
@@ -134,8 +135,8 @@ const PaymentVerification: React.FC = () => {
       },
     },
     {
-      field: 'dueDate',
-      headerName: 'Due Date',
+      field: 'sessionDate',
+      headerName: 'Session Date',
       width: 130,
       renderCell: (params: GridRenderCellParams) =>
         params.value ? format(params.value as Date, 'MMM d, yyyy') : '-',
@@ -143,14 +144,14 @@ const PaymentVerification: React.FC = () => {
     {
       field: 'transferInitiatedAt',
       headerName: 'Transfer Initiated',
-      width: 150,
+      width: 140,
       renderCell: (params: GridRenderCellParams) =>
         params.value ? format(params.value as Date, 'MMM d, yyyy') : '-',
     },
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 150,
+      width: 130,
       renderCell: (params: GridRenderCellParams) => {
         const invoice = params.row as Invoice;
         return invoice.status === 'transfer_initiated' ? (
@@ -168,9 +169,9 @@ const PaymentVerification: React.FC = () => {
     },
   ];
 
-  const transferInitiatedCount = invoices.filter(
-    inv => inv.status === 'transfer_initiated'
-  ).length;
+  const pendingInvoices = invoices.filter(inv => inv.status === 'pending' || inv.status === 'transfer_initiated');
+  const paidInvoices = invoices.filter(inv => inv.status === 'paid');
+  const transferInitiatedCount = invoices.filter(inv => inv.status === 'transfer_initiated').length;
 
   return (
     <Box>
@@ -196,9 +197,16 @@ const PaymentVerification: React.FC = () => {
         </Alert>
       )}
 
-      <Box sx={{ height: 600, width: '100%' }}>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
+          <Tab label={`Pending (${pendingInvoices.length})`} />
+          <Tab label={`Paid (${paidInvoices.length})`} />
+        </Tabs>
+      </Box>
+
+      <Box sx={{ height: 500, width: '100%' }}>
         <DataGrid
-          rows={invoices}
+          rows={tabValue === 0 ? pendingInvoices : paidInvoices}
           columns={columns}
           loading={loading}
           getRowId={(row) => row.id}
@@ -234,8 +242,8 @@ const PaymentVerification: React.FC = () => {
                   </span>
                 </Typography>
               </Box>
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                This will mark the invoice as paid and activate the member's subscription for 1 year.
+              <Alert severity="info" sx={{ mt: 2 }}>
+                This will mark the invoice as paid.
               </Alert>
             </Box>
           )}

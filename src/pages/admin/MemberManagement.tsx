@@ -232,10 +232,13 @@ const MemberManagement: React.FC = () => {
     {
       field: 'role',
       headerName: 'Role',
-      width: 120,
+      width: 130,
       renderCell: (params: GridRenderCellParams) => {
         const role = params.value as string;
-        const color = role === 'admin' || role === 'coach' ? 'secondary' : 'default';
+        let color: any = 'default';
+        if (role === 'admin' || role === 'super-admin') color = 'error';
+        else if (role === 'board') color = 'secondary';
+        else if (role === 'coach') color = 'primary';
         return <Chip label={role} color={color} size="small" />;
       },
     },
@@ -379,6 +382,7 @@ const MemberManagement: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                 >
                   <MenuItem value="member">Member</MenuItem>
+                  <MenuItem value="board">Board Member</MenuItem>
                   <MenuItem value="coach">Coach</MenuItem>
                   <MenuItem value="admin">Admin</MenuItem>
                 </Select>

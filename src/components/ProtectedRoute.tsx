@@ -51,8 +51,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole 
   if (requiredRole) {
     const hasAccess =
       requiredRole === 'admin'
-        ? userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin'
-        : userData.role === requiredRole;
+        ? userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin' || userData.role === 'board'
+        : userData.role === requiredRole || userData.role === 'board';
 
     if (!hasAccess) {
       return <Navigate to="/unauthorized" replace />;

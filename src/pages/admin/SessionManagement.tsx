@@ -10,48 +10,82 @@ import {
   TextField,
   Grid,
   MenuItem,
-  Card,
-  CardContent,
   Chip,
+  IconButton,
+  FormControlLabel,
+  Checkbox,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Tabs,
+  Tab,
+  Tooltip,
+  Alert,
 } from '@mui/material';
-import { Add } from '@mui/icons-material';
+import { Add, Delete, Edit, People, Event } from '@mui/icons-material';
 import {
   collection,
   getDocs,
   addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
   query,
   where,
   Timestamp,
   orderBy,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { Session } from '../../types';
-import { format, startOfWeek, addDays } from 'date-fns';
+import { Session, PoolLocation } from '../../types';
+import { format, addWeeks, isBefore, startOfDay } from 'date-fns';
 
 const SessionManagement: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [locations, setLocations] = useState<PoolLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [tabValue, setTabValue] = useState(0); // 0 = upcoming, 1 = past
+  const [defaultPriceBoard] = useState(5);
+  const [defaultPriceMember] = useState(7);
+
   const [formData, setFormData] = useState({
     date: '',
     startTime: '',
     endTime: '',
-    location: '',
+    locationId: '',
     type: 'pool' as 'pool' | 'open_water' | 'theory' | 'competition',
     capacity: 10,
     description: '',
+    priceBoard: 5,
+    priceMember: 7,
+    repeatWeekly: false,
+    repeatEndDate: '',
   });
 
   useEffect(() => {
-    fetchSessions();
+    fetchData();
   }, []);
 
-  const fetchSessions = async () => {
+  const fetchData = async () => {
     try {
-      const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+      // Fetch locations
+      const locationsQuery = query(collection(db, 'locations'), where('isActive', '==', true));
+      const locationsSnapshot = await getDocs(locationsQuery);
+      const locationsList = locationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as PoolLocation[];
+      setLocations(locationsList);
+
+      // Fetch all sessions
       const sessionsQuery = query(
         collection(db, 'sessions'),
-        where('date', '>=', Timestamp.fromDate(weekStart)),
         orderBy('date', 'asc')
       );
       const querySnapshot = await getDocs(sessionsQuery);
@@ -59,90 +93,238 @@ const SessionManagement: React.FC = () => {
         id: doc.id,
         ...doc.data(),
         date: doc.data().date?.toDate(),
+        repeatEndDate: doc.data().repeatEndDate?.toDate(),
         createdAt: doc.data().createdAt?.toDate(),
       })) as Session[];
       setSessions(sessionsList);
     } catch (error) {
-      console.error('Error fetching sessions:', error);
+      console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenDialog = () => {
-    setFormData({
-      date: '',
-      startTime: '',
-      endTime: '',
-      location: '',
-      type: 'pool',
-      capacity: 10,
-      description: '',
-    });
+  const handleOpenDialog = (session?: Session) => {
+    if (session) {
+      setSelectedSession(session);
+      setFormData({
+        date: format(session.date, 'yyyy-MM-dd'),
+        startTime: session.startTime,
+        endTime: session.endTime,
+        locationId: session.locationId,
+        type: session.type,
+        capacity: session.capacity,
+        description: session.description || '',
+        priceBoard: session.priceBoard,
+        priceMember: session.priceMember,
+        repeatWeekly: session.repeatWeekly || false,
+        repeatEndDate: session.repeatEndDate ? format(session.repeatEndDate, 'yyyy-MM-dd') : '',
+      });
+    } else {
+      setSelectedSession(null);
+      setFormData({
+        date: '',
+        startTime: '',
+        endTime: '',
+        locationId: locations.length > 0 ? locations[0].id : '',
+        type: 'pool',
+        capacity: 10,
+        description: '',
+        priceBoard: defaultPriceBoard,
+        priceMember: defaultPriceMember,
+        repeatWeekly: false,
+        repeatEndDate: '',
+      });
+    }
     setOpenDialog(true);
   };
 
   const handleCloseDialog = () => {
     setOpenDialog(false);
+    setSelectedSession(null);
   };
 
   const handleSave = async () => {
     try {
-      // Validate form data
-      if (!formData.date || !formData.startTime || !formData.endTime || !formData.location) {
+      if (!formData.date || !formData.startTime || !formData.endTime || !formData.locationId) {
         alert('Please fill in all required fields');
         return;
       }
 
-      console.log('📝 Creating session with data:', formData);
-      
+      const location = locations.find(l => l.id === formData.locationId);
+      if (!location) {
+        alert('Please select a valid location');
+        return;
+      }
+
       const sessionDate = new Date(formData.date);
-      console.log('📅 Session date:', sessionDate);
-      
-      const sessionData = {
-        date: Timestamp.fromDate(sessionDate),
+      const baseSessionData = {
         startTime: formData.startTime,
         endTime: formData.endTime,
-        location: formData.location,
+        locationId: formData.locationId,
+        locationName: location.name,
         type: formData.type,
         capacity: formData.capacity,
-        currentAttendance: 0,
         description: formData.description,
+        priceBoard: formData.priceBoard,
+        priceMember: formData.priceMember,
+        repeatWeekly: formData.repeatWeekly,
         createdBy: 'admin',
-        createdAt: Timestamp.now(),
       };
 
-      console.log('💾 Saving to Firestore:', sessionData);
-      const docRef = await addDoc(collection(db, 'sessions'), sessionData);
-      console.log('✅ Session created with ID:', docRef.id);
-      
-      await fetchSessions();
+      if (selectedSession) {
+        // Update existing session
+        await updateDoc(doc(db, 'sessions', selectedSession.id), {
+          ...baseSessionData,
+          date: Timestamp.fromDate(sessionDate),
+          repeatEndDate: formData.repeatEndDate ? Timestamp.fromDate(new Date(formData.repeatEndDate)) : null,
+          updatedAt: Timestamp.now(),
+        });
+      } else {
+        // Create new session(s)
+        if (formData.repeatWeekly && formData.repeatEndDate) {
+          // Create multiple sessions
+          const endDate = new Date(formData.repeatEndDate);
+          let currentDate = sessionDate;
+          const batch = writeBatch(db);
+          let sessionCount = 0;
+
+          while (isBefore(currentDate, endDate) || currentDate.getTime() === endDate.getTime()) {
+            const sessionRef = doc(collection(db, 'sessions'));
+            batch.set(sessionRef, {
+              ...baseSessionData,
+              date: Timestamp.fromDate(currentDate),
+              repeatEndDate: Timestamp.fromDate(endDate),
+              currentAttendance: 0,
+              createdAt: Timestamp.now(),
+            });
+            currentDate = addWeeks(currentDate, 1);
+            sessionCount++;
+            
+            // Firestore batch limit is 500
+            if (sessionCount >= 100) break;
+          }
+
+          await batch.commit();
+          alert(`Created ${sessionCount} weekly sessions`);
+        } else {
+          // Create single session
+          await addDoc(collection(db, 'sessions'), {
+            ...baseSessionData,
+            date: Timestamp.fromDate(sessionDate),
+            currentAttendance: 0,
+            createdAt: Timestamp.now(),
+          });
+        }
+      }
+
+      await fetchData();
       handleCloseDialog();
-      alert('Session created successfully!');
     } catch (error: any) {
-      console.error('❌ Error creating session:', error);
-      alert('Failed to create session: ' + error.message);
+      console.error('Error saving session:', error);
+      alert('Failed to save session: ' + error.message);
     }
   };
 
-  const getSessionsByDay = () => {
-    const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-    
-    return days.map(day => ({
-      date: day,
-      sessions: sessions.filter(
-        session => format(session.date, 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd')
-      ),
-    }));
+  const handleDeleteSession = async (session: Session) => {
+    if (!window.confirm(`Are you sure you want to delete this session on ${format(session.date, 'MMM d, yyyy')}?`)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'sessions', session.id));
+      await fetchData();
+    } catch (error) {
+      console.error('Error deleting session:', error);
+      alert('Failed to delete session');
+    }
   };
 
-  const sessionTypeColors: Record<string, string> = {
+  const today = startOfDay(new Date());
+  const upcomingSessions = sessions.filter(s => s.date >= today);
+  const pastSessions = sessions.filter(s => s.date < today).reverse();
+
+  const sessionTypeColors: Record<string, any> = {
     pool: 'primary',
     open_water: 'info',
     theory: 'secondary',
     competition: 'error',
   };
+
+  const SessionTable = ({ sessionList }: { sessionList: Session[] }) => (
+    <TableContainer component={Paper}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>Date</TableCell>
+            <TableCell>Time</TableCell>
+            <TableCell>Location</TableCell>
+            <TableCell>Type</TableCell>
+            <TableCell align="center">Capacity</TableCell>
+            <TableCell align="right">Price (Board/Member)</TableCell>
+            <TableCell align="center">Actions</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {sessionList.map((session) => (
+            <TableRow key={session.id} hover>
+              <TableCell>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Event fontSize="small" color="action" />
+                  {format(session.date, 'EEE, MMM d, yyyy')}
+                </Box>
+              </TableCell>
+              <TableCell>{session.startTime} - {session.endTime}</TableCell>
+              <TableCell>{session.locationName}</TableCell>
+              <TableCell>
+                <Chip
+                  label={session.type.replace('_', ' ')}
+                  color={sessionTypeColors[session.type]}
+                  size="small"
+                />
+              </TableCell>
+              <TableCell align="center">
+                <Tooltip title={`${session.currentAttendance} subscribed`}>
+                  <Box display="flex" alignItems="center" justifyContent="center" gap={0.5}>
+                    <People fontSize="small" />
+                    {session.currentAttendance}/{session.capacity}
+                  </Box>
+                </Tooltip>
+              </TableCell>
+              <TableCell align="right">
+                €{session.priceBoard?.toFixed(2) || '0.00'} / €{session.priceMember?.toFixed(2) || '0.00'}
+              </TableCell>
+              <TableCell align="center">
+                <IconButton
+                  color="primary"
+                  size="small"
+                  onClick={() => handleOpenDialog(session)}
+                >
+                  <Edit />
+                </IconButton>
+                <IconButton
+                  color="error"
+                  size="small"
+                  onClick={() => handleDeleteSession(session)}
+                >
+                  <Delete />
+                </IconButton>
+              </TableCell>
+            </TableRow>
+          ))}
+          {sessionList.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={7} align="center">
+                <Typography variant="body2" color="text.secondary" py={2}>
+                  No sessions found
+                </Typography>
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
 
   return (
     <Box>
@@ -151,66 +333,35 @@ const SessionManagement: React.FC = () => {
         <Button
           variant="contained"
           startIcon={<Add />}
-          onClick={handleOpenDialog}
+          onClick={() => handleOpenDialog()}
+          disabled={locations.length === 0}
         >
           Create Session
         </Button>
       </Box>
 
-      <Typography variant="h6" gutterBottom>
-        This Week's Schedule
-      </Typography>
+      {locations.length === 0 && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          Please add a pool location first before creating sessions.
+        </Alert>
+      )}
 
-      <Grid container spacing={2}>
-        {getSessionsByDay().map(({ date, sessions: daySessions }) => (
-          <Grid item xs={12} md={6} lg={4} key={date.toISOString()}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  {format(date, 'EEEE, MMM d')}
-                </Typography>
-                {daySessions.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    No sessions scheduled
-                  </Typography>
-                ) : (
-                  daySessions.map(session => (
-                    <Box key={session.id} mb={2} p={2} bgcolor="background.default" borderRadius={1}>
-                      <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Chip
-                          label={session.type.replace('_', ' ')}
-                          color={sessionTypeColors[session.type] as any}
-                          size="small"
-                        />
-                        <Typography variant="body2" fontWeight="bold">
-                          {session.startTime} - {session.endTime}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" gutterBottom>
-                        📍 {session.location}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Capacity: {session.currentAttendance}/{session.capacity}
-                      </Typography>
-                      {session.description && (
-                        <Typography variant="body2" color="text.secondary" mt={1}>
-                          {session.description}
-                        </Typography>
-                      )}
-                    </Box>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
+          <Tab label={`Upcoming Sessions (${upcomingSessions.length})`} />
+          <Tab label={`Past Sessions (${pastSessions.length})`} />
+        </Tabs>
+      </Box>
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>Create New Session</DialogTitle>
+      {tabValue === 0 && <SessionTable sessionList={upcomingSessions} />}
+      {tabValue === 1 && <SessionTable sessionList={pastSessions} />}
+
+      {/* Create/Edit Session Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <DialogTitle>{selectedSession ? 'Edit Session' : 'Create New Session'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
+            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
                 label="Date"
@@ -218,13 +369,11 @@ const SessionManagement: React.FC = () => {
                 value={formData.date}
                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                 InputLabelProps={{ shrink: true }}
-                inputProps={{
-                  min: format(new Date(), 'yyyy-MM-dd')
-                }}
+                inputProps={{ min: format(new Date(), 'yyyy-MM-dd') }}
                 required
               />
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={6} md={3}>
               <TextField
                 fullWidth
                 label="Start Time"
@@ -235,7 +384,7 @@ const SessionManagement: React.FC = () => {
                 required
               />
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={6} md={3}>
               <TextField
                 fullWidth
                 label="End Time"
@@ -246,16 +395,23 @@ const SessionManagement: React.FC = () => {
                 required
               />
             </Grid>
-            <Grid item xs={12}>
+            <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                select
                 label="Location"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                value={formData.locationId}
+                onChange={(e) => setFormData({ ...formData, locationId: e.target.value })}
                 required
-              />
+              >
+                {locations.map((location) => (
+                  <MenuItem key={location.id} value={location.id}>
+                    {location.name}
+                  </MenuItem>
+                ))}
+              </TextField>
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={6} md={3}>
               <TextField
                 fullWidth
                 select
@@ -270,14 +426,37 @@ const SessionManagement: React.FC = () => {
                 <MenuItem value="competition">Competition</MenuItem>
               </TextField>
             </Grid>
-            <Grid item xs={6}>
+            <Grid item xs={6} md={3}>
               <TextField
                 fullWidth
                 label="Capacity"
                 type="number"
                 value={formData.capacity}
                 onChange={(e) => setFormData({ ...formData, capacity: parseInt(e.target.value) })}
+                inputProps={{ min: 1 }}
                 required
+              />
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <TextField
+                fullWidth
+                label="Price (Board Members)"
+                type="number"
+                value={formData.priceBoard}
+                onChange={(e) => setFormData({ ...formData, priceBoard: parseFloat(e.target.value) })}
+                InputProps={{ startAdornment: <Typography sx={{ mr: 1 }}>€</Typography> }}
+                inputProps={{ min: 0, step: 0.5 }}
+              />
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <TextField
+                fullWidth
+                label="Price (Members)"
+                type="number"
+                value={formData.priceMember}
+                onChange={(e) => setFormData({ ...formData, priceMember: parseFloat(e.target.value) })}
+                InputProps={{ startAdornment: <Typography sx={{ mr: 1 }}>€</Typography> }}
+                inputProps={{ min: 0, step: 0.5 }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -285,17 +464,48 @@ const SessionManagement: React.FC = () => {
                 fullWidth
                 label="Description"
                 multiline
-                rows={3}
+                rows={2}
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
             </Grid>
+            
+            {!selectedSession && (
+              <>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.repeatWeekly}
+                        onChange={(e) => setFormData({ ...formData, repeatWeekly: e.target.checked })}
+                      />
+                    }
+                    label="Repeat weekly"
+                  />
+                </Grid>
+                {formData.repeatWeekly && (
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      fullWidth
+                      label="Repeat Until"
+                      type="date"
+                      value={formData.repeatEndDate}
+                      onChange={(e) => setFormData({ ...formData, repeatEndDate: e.target.value })}
+                      InputLabelProps={{ shrink: true }}
+                      inputProps={{ min: formData.date }}
+                      required
+                      helperText="Sessions will be created weekly until this date"
+                    />
+                  </Grid>
+                )}
+              </>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSave} variant="contained">
-            Create Session
+            {selectedSession ? 'Update' : 'Create'} Session
           </Button>
         </DialogActions>
       </Dialog>

@@ -167,7 +167,7 @@ const MemberDashboard: React.FC = () => {
                     ⏰ {nextSession.startTime} - {nextSession.endTime}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    📍 {nextSession.location}
+                    📍 {nextSession.locationName || 'TBD'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Type: {nextSession.type.replace('_', ' ')}

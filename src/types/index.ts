@@ -1,6 +1,6 @@
 // TypeScript interfaces for Firestore data models
 
-export type UserRole = 'member' | 'admin' | 'coach' | 'super-admin';
+export type UserRole = 'member' | 'board' | 'admin' | 'coach' | 'super-admin';
 
 export interface User {
   uid: string;
@@ -9,6 +9,27 @@ export interface User {
   role: UserRole;
   createdAt: Date;
   approved: boolean;
+}
+
+// Pool Location
+export interface PoolLocation {
+  id: string;
+  name: string;
+  address: string;
+  description?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Bank Details for payments
+export interface BankDetails {
+  id: string;
+  accountHolder: string;
+  iban: string;
+  isDefault: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Member {
@@ -77,12 +98,21 @@ export interface Session {
   date: Date;
   startTime: string;
   endTime: string;
-  location: string;
+  locationId: string; // Reference to PoolLocation
+  locationName: string; // Denormalized for display
   type: 'pool' | 'open_water' | 'theory' | 'competition';
   capacity: number;
   currentAttendance: number;
   description?: string;
   coach?: string;
+  // Pricing
+  priceBoard: number; // Price for board members
+  priceMember: number; // Price for regular members
+  // Repeat settings
+  repeatWeekly: boolean;
+  repeatEndDate?: Date; // When to stop repeating
+  parentSessionId?: string; // Reference to parent session if created from repeat
+  // Management
   createdBy: string;
   createdAt: Date;
 }
@@ -97,7 +127,7 @@ export interface Attendance {
   updatedAt: Date;
 }
 
-export type InvoiceStatus = 'pending' | 'transfer_initiated' | 'paid' | 'overdue';
+export type InvoiceStatus = 'pending' | 'transfer_initiated' | 'paid' | 'overdue' | 'cancelled';
 
 export interface Invoice {
   id: string;
@@ -109,11 +139,15 @@ export interface Invoice {
   status: InvoiceStatus;
   uniquePaymentReference: string; // e.g., "BM-2024-001-ABC123"
   description: string;
+  sessionId?: string; // Reference to session if created from subscription
+  sessionDate?: Date;
   dueDate: Date;
   createdAt: Date;
   updatedAt: Date;
   paidAt?: Date;
   transferInitiatedAt?: Date;
+  confirmedBy?: string; // Admin who confirmed the payment
+  confirmedAt?: Date;
 }
 
 export interface PaymentInfo {

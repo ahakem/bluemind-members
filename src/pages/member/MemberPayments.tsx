@@ -15,8 +15,9 @@ import {
   Grid,
   Chip,
   IconButton,
+  Tooltip,
 } from '@mui/material';
-import { ContentCopy, CheckCircle } from '@mui/icons-material';
+import { ContentCopy, CheckCircle, Check } from '@mui/icons-material';
 import {
   collection,
   getDocs,
@@ -28,7 +29,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Invoice, PaymentInfo } from '../../types';
+import { Invoice, BankDetails } from '../../types';
 import { format } from 'date-fns';
 
 const MemberPayments: React.FC = () => {
@@ -36,42 +37,53 @@ const MemberPayments: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  // Payment information - this should be stored in Firestore or environment variables
-  const paymentInfo: PaymentInfo = {
-    iban: 'NL91ABNA0417164300',
-    bankName: 'ABN AMRO',
-    accountHolder: 'BlueMind Freediving',
-  };
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
 
   useEffect(() => {
-    fetchInvoices();
+    fetchData();
   }, []);
 
-  const fetchInvoices = async () => {
+  const fetchData = async () => {
     if (!currentUser) return;
 
     try {
+      // Fetch invoices
       const invoicesQuery = query(
         collection(db, 'invoices'),
         where('memberId', '==', currentUser.uid)
       );
       const querySnapshot = await getDocs(invoicesQuery);
-      const invoicesList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        dueDate: doc.data().dueDate?.toDate(),
-        createdAt: doc.data().createdAt?.toDate(),
-        updatedAt: doc.data().updatedAt?.toDate(),
-        paidAt: doc.data().paidAt?.toDate(),
-        transferInitiatedAt: doc.data().transferInitiatedAt?.toDate(),
-      })) as Invoice[];
+      const invoicesList = querySnapshot.docs
+        .filter(doc => doc.data().status !== 'cancelled')
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          dueDate: doc.data().dueDate?.toDate(),
+          sessionDate: doc.data().sessionDate?.toDate(),
+          createdAt: doc.data().createdAt?.toDate(),
+          updatedAt: doc.data().updatedAt?.toDate(),
+          paidAt: doc.data().paidAt?.toDate(),
+          transferInitiatedAt: doc.data().transferInitiatedAt?.toDate(),
+          confirmedAt: doc.data().confirmedAt?.toDate(),
+        })) as Invoice[];
       setInvoices(invoicesList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+
+      // Fetch bank details
+      const bankSnapshot = await getDocs(collection(db, 'bankDetails'));
+      if (!bankSnapshot.empty) {
+        const bankDoc = bankSnapshot.docs[0];
+        setBankDetails({
+          id: bankDoc.id,
+          ...bankDoc.data(),
+        } as BankDetails);
+      }
     } catch (error) {
-      console.error('Error fetching invoices:', error);
+      console.error('Error fetching data:', error);
     }
   };
+
+  const fetchInvoices = fetchData; // Alias for compatibility
 
   const handleInitiateTransfer = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -96,10 +108,14 @@ const MemberPayments: React.FC = () => {
     }
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const formatIban = (iban: string) => {
+    return iban.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim();
   };
 
   const getStatusColor = (status: string) => {
@@ -210,101 +226,113 @@ const MemberPayments: React.FC = () => {
         <DialogContent>
           {selectedInvoice && (
             <Box>
-              <Alert severity="info" sx={{ mb: 3 }}>
-                Please complete the bank transfer using the following details. After completing
-                the transfer, confirm below to notify the admin.
-              </Alert>
-
-              <Paper sx={{ p: 3, bgcolor: 'background.default', mb: 3 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Amount to Transfer
-                </Typography>
-                <Typography variant="h4" color="primary" gutterBottom fontWeight="bold">
-                  €{selectedInvoice.amount}
-                </Typography>
-
-                <Divider sx={{ my: 2 }} />
-
-                <Box mb={2}>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Bank Name
-                  </Typography>
-                  <Typography variant="body1" fontWeight="medium">
-                    {paymentInfo.bankName}
-                  </Typography>
-                </Box>
-
-                <Box mb={2}>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    Account Holder
-                  </Typography>
-                  <Typography variant="body1" fontWeight="medium">
-                    {paymentInfo.accountHolder}
-                  </Typography>
-                </Box>
-
-                <Box mb={2}>
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                    IBAN
-                  </Typography>
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Typography variant="body1" fontFamily="monospace" fontWeight="bold">
-                      {paymentInfo.iban}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => copyToClipboard(paymentInfo.iban)}
-                    >
-                      <ContentCopy fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-
-                <Divider sx={{ my: 2 }} />
-
-                <Box>
-                  <Typography variant="subtitle2" color="error" gutterBottom>
-                    IMPORTANT: Payment Reference
-                  </Typography>
-                  <Box display="flex" alignItems="center" gap={1} mb={1}>
-                    <Typography
-                      variant="h6"
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      color="error"
-                    >
-                      {selectedInvoice.uniquePaymentReference}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => copyToClipboard(selectedInvoice.uniquePaymentReference)}
-                    >
-                      <ContentCopy fontSize="small" />
-                    </IconButton>
-                  </Box>
-                  <Alert severity="warning">
-                    Please include this reference in your transfer to ensure proper identification!
-                  </Alert>
-                </Box>
-              </Paper>
-
-              {copied && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                  Copied to clipboard!
+              {!bankDetails ? (
+                <Alert severity="error" sx={{ mb: 3 }}>
+                  Bank details have not been configured. Please contact the administrator.
                 </Alert>
-              )}
+              ) : (
+                <>
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    Please complete the bank transfer using the following details. After completing
+                    the transfer, confirm below to notify the admin.
+                  </Alert>
 
-              <Alert severity="warning">
-                By clicking "I've Completed the Transfer", you confirm that you have initiated
-                the bank transfer. The admin will verify the payment and activate your membership.
-              </Alert>
+                  <Paper sx={{ p: 3, bgcolor: 'background.default', mb: 3 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Amount to Transfer
+                    </Typography>
+                    <Typography variant="h4" color="primary" gutterBottom fontWeight="bold">
+                      €{selectedInvoice.amount.toFixed(2)}
+                    </Typography>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Box mb={2}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Account Holder
+                      </Typography>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Typography variant="body1" fontWeight="medium">
+                          {bankDetails.accountHolder}
+                        </Typography>
+                        <Tooltip title={copiedField === 'holder' ? 'Copied!' : 'Copy'}>
+                          <IconButton
+                            size="small"
+                            onClick={() => copyToClipboard(bankDetails.accountHolder, 'holder')}
+                          >
+                            {copiedField === 'holder' ? <Check color="success" fontSize="small" /> : <ContentCopy fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+
+                    <Box mb={2}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        IBAN
+                      </Typography>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Typography variant="body1" fontFamily="monospace" fontWeight="bold">
+                          {formatIban(bankDetails.iban)}
+                        </Typography>
+                        <Tooltip title={copiedField === 'iban' ? 'Copied!' : 'Copy'}>
+                          <IconButton
+                            size="small"
+                            onClick={() => copyToClipboard(bankDetails.iban, 'iban')}
+                          >
+                            {copiedField === 'iban' ? <Check color="success" fontSize="small" /> : <ContentCopy fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    <Box>
+                      <Typography variant="subtitle2" color="error" gutterBottom>
+                        IMPORTANT: Payment Reference
+                      </Typography>
+                      <Box display="flex" alignItems="center" gap={1} mb={1}>
+                        <Typography
+                          variant="h6"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                          color="error"
+                        >
+                          {selectedInvoice.uniquePaymentReference}
+                        </Typography>
+                        <Tooltip title={copiedField === 'ref' ? 'Copied!' : 'Copy'}>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => copyToClipboard(selectedInvoice.uniquePaymentReference, 'ref')}
+                          >
+                            {copiedField === 'ref' ? <Check fontSize="small" /> : <ContentCopy fontSize="small" />}
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                      <Alert severity="warning">
+                        Please include this reference in your transfer to ensure proper identification!
+                      </Alert>
+                    </Box>
+                  </Paper>
+
+                  <Alert severity="warning">
+                    By clicking "I've Completed the Transfer", you confirm that you have initiated
+                    the bank transfer. The admin will verify the payment.
+                  </Alert>
+                </>
+              )}
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
-          <Button onClick={handleConfirmTransfer} variant="contained" color="primary">
+          <Button 
+            onClick={handleConfirmTransfer} 
+            variant="contained" 
+            color="primary"
+            disabled={!bankDetails}
+          >
             I've Completed the Transfer
           </Button>
         </DialogActions>
