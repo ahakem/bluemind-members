@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -122,7 +122,7 @@ const Login: React.FC = () => {
           <Box textAlign="center" mt={2}>
             <Typography variant="body2">
               Don't have an account?{' '}
-              <Link href="/register" underline="hover">
+              <Link component={RouterLink} to="/register" underline="hover">
                 Register here
               </Link>
             </Typography>

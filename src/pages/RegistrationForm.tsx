@@ -709,7 +709,7 @@ const RegistrationForm: React.FC = () => {
                     <span>
                       I have read, understood, and agree to comply with the{' '}
                       <a 
-                        href="/documents/house-rules" 
+                        href="#/documents/house-rules" 
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: '#0A4D68', fontWeight: 'bold' }}
@@ -749,7 +749,7 @@ const RegistrationForm: React.FC = () => {
                     <span>
                       I have read and agree to the{' '}
                       <a 
-                        href="/documents/liability-waiver" 
+                        href="#/documents/liability-waiver" 
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: '#0A4D68', fontWeight: 'bold' }}
@@ -789,7 +789,7 @@ const RegistrationForm: React.FC = () => {
                     <span>
                       I have read and agree to the{' '}
                       <a 
-                        href="/documents/privacy-policy" 
+                        href="#/documents/privacy-policy" 
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: '#0A4D68', fontWeight: 'bold' }}
