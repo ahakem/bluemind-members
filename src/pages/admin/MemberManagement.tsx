@@ -1,0 +1,491 @@
+import React, { useEffect, useState } from 'react';
+import {
+  Box,
+  Typography,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Grid,
+  Alert,
+  Chip,
+  IconButton,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+} from '@mui/material';
+import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
+import { Add, Edit, Warning, CheckCircle, Visibility } from '@mui/icons-material';
+import {
+  collection,
+  getDocs,
+  setDoc,
+  updateDoc,
+  doc,
+  Timestamp,
+  query,
+  where,
+  getDoc,
+} from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { Member, User } from '../../types';
+import MemberDetailView from '../../components/MemberDetailView';
+
+interface UserWithMember extends User {
+  memberData?: Member;
+  medicalStatus?: 'valid' | 'expiring_soon' | 'expired' | 'none';
+}
+
+const MemberManagement: React.FC = () => {
+  const [users, setUsers] = useState<UserWithMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [openDetailView, setOpenDetailView] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserWithMember | null>(null);
+  const [selectedUserForDetail, setSelectedUserForDetail] = useState<UserWithMember | null>(null);
+  const [formData, setFormData] = useState({
+    approved: false,
+    role: 'member',
+    phone: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactRelationship: '',
+    medicalExpiryDate: '',
+    membershipStatus: 'pending',
+  });
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      // Fetch all users from users collection
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersList: UserWithMember[] = [];
+
+      for (const userDoc of usersSnapshot.docs) {
+        const userData = { id: userDoc.id, ...userDoc.data() } as unknown as User;
+        
+        // Try to fetch corresponding member data
+        const memberDoc = await getDoc(doc(db, 'members', userDoc.id));
+        let memberData: Member | undefined;
+        let medicalStatus: 'valid' | 'expiring_soon' | 'expired' | 'none' = 'none';
+
+        if (memberDoc.exists()) {
+          const data = memberDoc.data();
+          memberData = {
+            id: memberDoc.id,
+            ...data,
+            medicalCertificate: {
+              ...data.medicalCertificate,
+              expiryDate: data.medicalCertificate?.expiryDate?.toDate(),
+            },
+            createdAt: data.createdAt?.toDate(),
+            updatedAt: data.updatedAt?.toDate(),
+          } as unknown as Member;
+          
+          if (memberData.medicalCertificate?.expiryDate) {
+            medicalStatus = calculateMedicalStatus(memberData.medicalCertificate.expiryDate);
+          }
+        }
+
+        usersList.push({
+          ...userData,
+          memberData,
+          medicalStatus,
+        });
+      }
+      
+      setUsers(usersList);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateMedicalStatus = (expiryDate: Date | null): 'valid' | 'expiring_soon' | 'expired' | 'none' => {
+    if (!expiryDate) return 'none';
+    
+    const now = new Date();
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(now.getDate() + 30);
+    
+    if (expiryDate < now) return 'expired';
+    if (expiryDate < thirtyDaysFromNow) return 'expiring_soon';
+    return 'valid';
+  };
+
+  const handleOpenDialog = (user?: UserWithMember) => {
+    if (user) {
+      setSelectedUser(user);
+      setFormData({
+        approved: user.approved || false,
+        role: user.role || 'member',
+        phone: user.memberData?.phone || '',
+        emergencyContactName: user.memberData?.emergencyContact?.name || '',
+        emergencyContactPhone: user.memberData?.emergencyContact?.phone || '',
+        emergencyContactRelationship: user.memberData?.emergencyContact?.relationship || '',
+        medicalExpiryDate: user.memberData?.medicalCertificate?.expiryDate
+          ? user.memberData.medicalCertificate.expiryDate.toISOString().split('T')[0]
+          : '',
+        membershipStatus: user.memberData?.membershipStatus || 'pending',
+      });
+    } else {
+      setSelectedUser(null);
+      setFormData({
+        approved: false,
+        role: 'member',
+        phone: '',
+        emergencyContactName: '',
+        emergencyContactPhone: '',
+        emergencyContactRelationship: '',
+        medicalExpiryDate: '',
+        membershipStatus: 'pending',
+      });
+    }
+    setOpenDialog(true);
+  };
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setSelectedUser(null);
+  };
+
+  const handleOpenDetailView = (user: UserWithMember) => {
+    setSelectedUserForDetail(user);
+    setOpenDetailView(true);
+  };
+
+  const handleCloseDetailView = () => {
+    setOpenDetailView(false);
+    setSelectedUserForDetail(null);
+  };
+
+  const handleSave = async () => {
+    if (!selectedUser) return;
+
+    try {
+      // Update user document (role and approval status)
+      await updateDoc(doc(db, 'users', selectedUser.uid), {
+        role: formData.role,
+        approved: formData.approved,
+      });
+
+      // Create or update member document
+      const memberData: any = {
+        uid: selectedUser.uid,
+        name: selectedUser.name,
+        email: selectedUser.email,
+        phone: formData.phone,
+        emergencyContact: {
+          name: formData.emergencyContactName,
+          phone: formData.emergencyContactPhone,
+          relationship: formData.emergencyContactRelationship,
+        },
+        certifications: selectedUser.memberData?.certifications || [],
+        membershipStatus: formData.membershipStatus,
+        membershipExpiry: selectedUser.memberData?.membershipExpiry || null,
+        medicalCertificate: {
+          expiryDate: formData.medicalExpiryDate 
+            ? Timestamp.fromDate(new Date(formData.medicalExpiryDate))
+            : null,
+          status: formData.medicalExpiryDate ? calculateMedicalStatus(new Date(formData.medicalExpiryDate)) : 'expired',
+        },
+        personalBests: selectedUser.memberData?.personalBests || {
+          STA: null,
+          DYN: null,
+          DNF: null,
+          CWT: null,
+        },
+        updatedAt: Timestamp.now(),
+      };
+
+      // If member document doesn't exist, add createdAt
+      if (!selectedUser.memberData) {
+        memberData.createdAt = Timestamp.now();
+      }
+
+      await setDoc(doc(db, 'members', selectedUser.uid), memberData, { merge: true });
+
+      await fetchUsers();
+      handleCloseDialog();
+    } catch (error) {
+      console.error('Error saving member:', error);
+      alert('Error saving member data. Please try again.');
+    }
+  };
+
+  const columns: GridColDef[] = [
+    { field: 'name', headerName: 'Name', width: 200 },
+    { field: 'email', headerName: 'Email', width: 250 },
+    { 
+      field: 'phone', 
+      headerName: 'Phone', 
+      width: 150,
+      valueGetter: (params) => params.row.memberData?.phone || 'N/A',
+    },
+    {
+      field: 'role',
+      headerName: 'Role',
+      width: 120,
+      renderCell: (params: GridRenderCellParams) => {
+        const role = params.value as string;
+        const color = role === 'admin' || role === 'coach' ? 'secondary' : 'default';
+        return <Chip label={role} color={color} size="small" />;
+      },
+    },
+    {
+      field: 'approved',
+      headerName: 'Approved',
+      width: 120,
+      renderCell: (params: GridRenderCellParams) => {
+        const approved = params.value as boolean;
+        return (
+          <Chip 
+            label={approved ? 'Yes' : 'Pending'} 
+            color={approved ? 'success' : 'warning'} 
+            size="small" 
+          />
+        );
+      },
+    },
+    {
+      field: 'membershipStatus',
+      headerName: 'Membership',
+      width: 130,
+      valueGetter: (params) => params.row.memberData?.membershipStatus || 'N/A',
+      renderCell: (params: GridRenderCellParams) => {
+        const status = params.row.memberData?.membershipStatus;
+        if (!status) return <Chip label="N/A" size="small" />;
+        const color =
+          status === 'active' ? 'success' : status === 'pending' ? 'warning' : 'default';
+        return <Chip label={status} color={color} size="small" />;
+      },
+    },
+    {
+      field: 'medicalStatus',
+      headerName: 'Medical Status',
+      width: 180,
+      renderCell: (params: GridRenderCellParams) => {
+        const status = params.value as string;
+        if (status === 'none') {
+          return <Chip label="Not Set" size="small" />;
+        }
+        if (status === 'expired') {
+          return (
+            <Chip
+              icon={<Warning />}
+              label="Expired"
+              color="error"
+              size="small"
+            />
+          );
+        }
+        if (status === 'expiring_soon') {
+          return (
+            <Chip
+              icon={<Warning />}
+              label="Expiring Soon"
+              color="warning"
+              size="small"
+            />
+          );
+        }
+        return (
+          <Chip
+            icon={<CheckCircle />}
+            label="Valid"
+            color="success"
+            size="small"
+          />
+        );
+      },
+    },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 150,
+      renderCell: (params: GridRenderCellParams) => (
+        <Box>
+          <IconButton
+            color="info"
+            size="small"
+            onClick={() => handleOpenDetailView(params.row as UserWithMember)}
+            title="View Details"
+          >
+            <Visibility />
+          </IconButton>
+          <IconButton
+            color="primary"
+            size="small"
+            onClick={() => handleOpenDialog(params.row as UserWithMember)}
+            title="Edit"
+          >
+            <Edit />
+          </IconButton>
+        </Box>
+      ),
+    },
+  ];
+
+  const expiredMedicals = users.filter(u => u.medicalStatus === 'expired');
+
+  return (
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Member Management</Typography>
+        <Alert severity="info" sx={{ ml: 'auto' }}>
+          New users must register through the registration page first
+        </Alert>
+      </Box>
+
+      {expiredMedicals.length > 0 && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <strong>{expiredMedicals.length} member(s)</strong> have expired medical certificates.
+          Please update their information.
+        </Alert>
+      )}
+
+      <Box sx={{ height: 600, width: '100%' }}>
+        <DataGrid
+          rows={users}
+          columns={columns}
+          loading={loading}
+          getRowId={(row) => row.uid}
+          pageSizeOptions={[10, 25, 50]}
+          initialState={{
+            pagination: { paginationModel: { pageSize: 10 } },
+          }}
+        />
+      </Box>
+
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Edit User: {selectedUser?.name}
+        </DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Role</InputLabel>
+                <Select
+                  value={formData.role}
+                  label="Role"
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                >
+                  <MenuItem value="member">Member</MenuItem>
+                  <MenuItem value="coach">Coach</MenuItem>
+                  <MenuItem value="admin">Admin</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Approval Status</InputLabel>
+                <Select
+                  value={formData.approved}
+                  label="Approval Status"
+                  onChange={(e) => setFormData({ ...formData, approved: e.target.value === 'true' })}
+                >
+                  <MenuItem value="false">Pending</MenuItem>
+                  <MenuItem value="true">Approved</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Membership Status</InputLabel>
+                <Select
+                  value={formData.membershipStatus}
+                  label="Membership Status"
+                  onChange={(e) => setFormData({ ...formData, membershipStatus: e.target.value })}
+                >
+                  <MenuItem value="pending">Pending</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="suspended">Suspended</MenuItem>
+                  <MenuItem value="cancelled">Cancelled</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Medical Certificate Expiry"
+                type="date"
+                value={formData.medicalExpiryDate}
+                onChange={(e) =>
+                  setFormData({ ...formData, medicalExpiryDate: e.target.value })
+                }
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" gutterBottom>
+                Emergency Contact
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Contact Name"
+                value={formData.emergencyContactName}
+                onChange={(e) =>
+                  setFormData({ ...formData, emergencyContactName: e.target.value })
+                }
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Contact Phone"
+                value={formData.emergencyContactPhone}
+                onChange={(e) =>
+                  setFormData({ ...formData, emergencyContactPhone: e.target.value })
+                }
+              />
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Relationship"
+                value={formData.emergencyContactRelationship}
+                onChange={(e) =>
+                  setFormData({ ...formData, emergencyContactRelationship: e.target.value })
+                }
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button onClick={handleSave} variant="contained">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <MemberDetailView
+        open={openDetailView}
+        onClose={handleCloseDetailView}
+        member={selectedUserForDetail?.memberData || null}
+        user={selectedUserForDetail || null}
+      />
+    </Box>
+  );
+};
+
+export default MemberManagement;

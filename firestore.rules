@@ -1,0 +1,135 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin or coach
+    function isAdmin() {
+      return isSignedIn() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['super-admin', 'admin', 'coach'];
+    }
+    
+    // Helper function to check if user is super-admin
+    function isSuperAdmin() {
+      return isSignedIn() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super-admin';
+    }
+    
+    // Helper function to check if user is the owner
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is approved
+    function isApproved() {
+      return isSignedIn() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approved == true;
+    }
+    
+    // Users collection - stores authentication and role data
+    match /users/{userId} {
+      // Anyone authenticated can read their own user document
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      
+      // Only admins can update user roles and approval status
+      allow update: if isAdmin();
+      
+      // Users can create their own document during registration
+      allow create: if isSignedIn() && isOwner(userId);
+      
+      // Only super-admins can delete users
+      allow delete: if isSuperAdmin();
+    }
+    
+    // Members collection - stores freediving-specific member data
+    match /members/{memberId} {
+      // Members can read their own data, admins can read all
+      allow read: if isSignedIn() && (isOwner(memberId) || isAdmin());
+      
+      // Users can create their own member document during registration
+      allow create: if isSignedIn() && isOwner(memberId);
+      
+      // Members can update their own data (limited fields)
+      // Cannot change: photographyConsent, membershipStatus, medicalCertificate, agreedTo* fields, signature
+      allow update: if isSignedIn() && (
+        (isOwner(memberId) && 
+         // Only allow updating specific fields
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+           'photographyConsent', 'membershipStatus', 'membershipExpiry', 
+           'medicalCertificate', 'agreedToTerms', 'agreedToLiabilityWaiver',
+           'agreedToHouseRules', 'agreedToPrivacyPolicy', 'signature', 
+           'parentSignature', 'registrationDate', 'uid', 'email'
+         ])) ||
+        isAdmin()
+      );
+      
+      // Only admins can delete member records
+      allow delete: if isAdmin();
+    }
+    
+    // Sessions collection - stores training session schedules
+    match /sessions/{sessionId} {
+      // All approved users can read sessions
+      allow read: if isApproved();
+      
+      // Only admins can create, update, or delete sessions
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Attendance collection - tracks member attendance
+    match /attendance/{attendanceId} {
+      // Members can read their own attendance, admins can read all
+      allow read: if isSignedIn() && 
+        (resource.data.memberId == request.auth.uid || isAdmin());
+      
+      // Members can create their own bookings (RSVP)
+      allow create: if isSignedIn() && 
+        isApproved() &&
+        request.resource.data.memberId == request.auth.uid &&
+        request.resource.data.status == 'confirmed';
+      
+      // Members can cancel their own bookings
+      allow delete: if isSignedIn() && 
+        isApproved() &&
+        resource.data.memberId == request.auth.uid;
+      
+      // Admins can update attendance (mark as attended, no_show, etc.)
+      allow update: if isAdmin();
+    }
+    
+    // Invoices collection - stores payment invoices
+    match /invoices/{invoiceId} {
+      // Members can read their own invoices, admins can read all
+      allow read: if isSignedIn() && 
+        (resource.data.memberId == request.auth.uid || isAdmin());
+      
+      // Only admins can create invoices
+      allow create: if isAdmin();
+      
+      // Members can update their own invoice status to 'transfer_initiated'
+      allow update: if isSignedIn() && 
+        (
+          (resource.data.memberId == request.auth.uid && 
+           request.resource.data.status == 'transfer_initiated' &&
+           resource.data.status == 'pending') ||
+          isAdmin()
+        );
+      
+      // Only admins can delete invoices
+      allow delete: if isAdmin();
+    }
+    
+    // Content collection - stores editable page content (CMS)
+    match /content/{pageId} {
+      // Public read access so documents can be viewed during registration
+      allow read: if true;
+      
+      // Only admins can create, update, or delete content
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}
