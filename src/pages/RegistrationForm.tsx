@@ -218,14 +218,6 @@ const RegistrationForm: React.FC = () => {
     if (activeStep === 2) {
       if (!formData.certOrganization) errors.certOrganization = 'Organization is required';
       if (!formData.certLevel) errors.certLevel = 'Certification level is required';
-      if (!formData.certDate) errors.certDate = 'Certification date is required';
-      else {
-        const certDate = new Date(formData.certDate);
-        const today = new Date();
-        if (certDate > today) {
-          errors.certDate = 'Certification date cannot be in the future';
-        }
-      }
       if (!certFile) errors.certFile = 'Please upload your certification document';
       
       if (Object.keys(errors).length > 0) {
@@ -363,7 +355,6 @@ const RegistrationForm: React.FC = () => {
         certifications: [{
           organization: formData.certOrganization,
           level: formData.certLevel,
-          date: Timestamp.fromDate(new Date(formData.certDate)),
           documentUrl: certFileUrl,
         }],
         medicalCertificate: {
@@ -741,7 +732,7 @@ const RegistrationForm: React.FC = () => {
                 Please provide your highest freediving certification (AIDA 2, SSI 1, or equivalent)
               </Alert>
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Organization"
@@ -756,7 +747,7 @@ const RegistrationForm: React.FC = () => {
                 helperText={fieldErrors.certOrganization}
               />
             </Grid>
-            <Grid item xs={12} sm={4}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Level"
@@ -769,23 +760,6 @@ const RegistrationForm: React.FC = () => {
                 required
                 error={!!fieldErrors.certLevel}
                 helperText={fieldErrors.certLevel}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                label="Certification Date"
-                type="date"
-                value={formData.certDate}
-                onChange={(e) => {
-                  setFormData({ ...formData, certDate: e.target.value });
-                  if (fieldErrors.certDate) setFieldErrors({ ...fieldErrors, certDate: '' });
-                }}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ max: new Date().toISOString().split('T')[0] }}
-                required
-                error={!!fieldErrors.certDate}
-                helperText={fieldErrors.certDate}
               />
             </Grid>
             

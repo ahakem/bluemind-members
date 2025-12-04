@@ -10,11 +10,15 @@ import {
   LinearProgress,
   useMediaQuery,
   useTheme,
+  Avatar,
+  AvatarGroup,
+  Tooltip,
 } from '@mui/material';
 import {
   Event,
   CheckCircle,
   Payment as PaymentIcon,
+  People,
 } from '@mui/icons-material';
 import {
   collection,
@@ -30,12 +34,18 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Member, Session, Invoice } from '../../types';
 import { format, differenceInDays } from 'date-fns';
 
+interface Attendee {
+  id: string;
+  memberName: string;
+}
+
 const MemberDashboard: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { currentUser } = useAuth();
   const [member, setMember] = useState<Member | null>(null);
   const [nextSession, setNextSession] = useState<Session | null>(null);
+  const [nextSessionAttendees, setNextSessionAttendees] = useState<Attendee[]>([]);
   const [pendingInvoice, setPendingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,7 +88,20 @@ const MemberDashboard: React.FC = () => {
       
       if (sessions.length > 0) {
         sessions.sort((a, b) => a.date.getTime() - b.date.getTime());
-        setNextSession(sessions[0]);
+        const nextSess = sessions[0];
+        setNextSession(nextSess);
+        
+        // Fetch attendees for next session
+        const attendanceQuery = query(
+          collection(db, 'attendance'),
+          where('sessionId', '==', nextSess.id)
+        );
+        const attendanceSnapshot = await getDocs(attendanceQuery);
+        const attendees = attendanceSnapshot.docs.map(doc => ({
+          id: doc.id,
+          memberName: doc.data().memberName,
+        }));
+        setNextSessionAttendees(attendees);
       }
 
       // Fetch pending invoice
@@ -173,9 +196,37 @@ const MemberDashboard: React.FC = () => {
                   <Typography variant="body2" color="text.secondary">
                     📍 {nextSession.locationName || 'TBD'}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
                     Type: {nextSession.type.replace('_', ' ')}
                   </Typography>
+                  
+                  {/* Attendees */}
+                  <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Box display="flex" alignItems="center" gap={1} mb={1}>
+                      <People fontSize="small" color="action" />
+                      <Typography variant="body2" color="text.secondary">
+                        {nextSessionAttendees.length} attending
+                      </Typography>
+                    </Box>
+                    {nextSessionAttendees.length > 0 && (
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <AvatarGroup max={isMobile ? 4 : 6} sx={{ '& .MuiAvatar-root': { width: 28, height: 28, fontSize: '0.75rem' } }}>
+                          {nextSessionAttendees.map((attendee) => (
+                            <Tooltip key={attendee.id} title={attendee.memberName}>
+                              <Avatar sx={{ bgcolor: 'primary.main' }}>
+                                {attendee.memberName.charAt(0).toUpperCase()}
+                              </Avatar>
+                            </Tooltip>
+                          ))}
+                        </AvatarGroup>
+                        {!isMobile && nextSessionAttendees.length <= 3 && (
+                          <Typography variant="caption" color="text.secondary">
+                            {nextSessionAttendees.map(a => a.memberName.split(' ')[0]).join(', ')}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
                 </Box>
               ) : (
                 <Typography variant="body2" color="text.secondary">

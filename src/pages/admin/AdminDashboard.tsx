@@ -7,23 +7,26 @@ import {
   Typography,
   Paper,
   Alert,
+  Button,
 } from '@mui/material';
 import {
   People,
   Event,
-  Warning,
   Payment,
+  PersonAdd,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { Member, Session, Invoice } from '../../types';
+import { Member } from '../../types';
 
 const AdminDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalMembers: 0,
     activeMembers: 0,
     upcomingSessions: 0,
-    expiredMedicals: 0,
+    pendingUsers: 0,
     pendingPayments: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -36,9 +39,13 @@ const AdminDashboard: React.FC = () => {
         const members = membersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Member));
         
         const activeMembers = members.filter(m => m.membershipStatus === 'active').length;
-        const expiredMedicals = members.filter(
-          m => m.medicalCertificate.status === 'expired'
-        ).length;
+
+        // Fetch pending users (not approved)
+        const usersQuery = query(
+          collection(db, 'users'),
+          where('approved', '==', false)
+        );
+        const pendingUsersSnapshot = await getDocs(usersQuery);
 
         // Fetch upcoming sessions
         const now = Timestamp.now();
@@ -59,7 +66,7 @@ const AdminDashboard: React.FC = () => {
           totalMembers: members.length,
           activeMembers,
           upcomingSessions: sessionsSnapshot.size,
-          expiredMedicals,
+          pendingUsers: pendingUsersSnapshot.size,
           pendingPayments: invoicesSnapshot.size,
         });
       } catch (error) {
@@ -105,9 +112,23 @@ const AdminDashboard: React.FC = () => {
         Admin Dashboard
       </Typography>
 
-      {stats.expiredMedicals > 0 && (
-        <Alert severity="warning" sx={{ mb: 3 }} icon={<Warning />}>
-          <strong>{stats.expiredMedicals} member(s)</strong> have expired medical certificates!
+      {stats.pendingUsers > 0 && (
+        <Alert 
+          severity="warning" 
+          sx={{ mb: 3, py: 2 }} 
+          icon={<PersonAdd sx={{ fontSize: 32 }} />}
+          action={
+            <Button color="inherit" size="small" onClick={() => navigate('/admin/members')}>
+              Review Now
+            </Button>
+          }
+        >
+          <Typography variant="h6" component="span">
+            {stats.pendingUsers} new user{stats.pendingUsers > 1 ? 's' : ''} pending approval!
+          </Typography>
+          <Typography variant="body2">
+            New registrations require your review before they can access the system.
+          </Typography>
         </Alert>
       )}
 

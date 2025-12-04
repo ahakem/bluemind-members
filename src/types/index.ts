@@ -63,8 +63,9 @@ export interface Member {
   certifications: {
     organization: string;
     level: string;
-    date: Date;
+    date?: Date;
     proofDocument?: string; // base64 or URL
+    documentUrl?: string; // Firebase Storage URL
   }[];
   medicalCertificate: {
     expiryDate: Date;

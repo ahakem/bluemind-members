@@ -410,21 +410,16 @@ const MemberManagement: React.FC = () => {
     },
   ];
 
-  const expiredMedicals = users.filter(u => u.medicalStatus === 'expired');
+  // Filter pending users for review
+  const pendingUsers = users.filter(u => !u.approved);
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Member Management</Typography>
-        <Alert severity="info" sx={{ ml: 'auto' }}>
-          New users must register through the registration page first
-        </Alert>
-      </Box>
-
-      {expiredMedicals.length > 0 && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          <strong>{expiredMedicals.length} member(s)</strong> have expired medical certificates.
-          Please update their information.
+      <Typography variant="h4" gutterBottom>Member Management</Typography>
+      
+      {pendingUsers.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          <strong>{pendingUsers.length} user(s)</strong> pending approval.
         </Alert>
       )}
 

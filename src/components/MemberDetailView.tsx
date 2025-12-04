@@ -212,8 +212,19 @@ const MemberDetailView: React.FC<MemberDetailViewProps> = ({ open, onClose, memb
               <Box key={index} sx={{ mb: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
                 <InfoRow label="Organization" value={cert.organization} />
                 <InfoRow label="Level" value={cert.level} />
-                <InfoRow label="Date" value={formatDate(cert.date)} />
-                {cert.proofDocument && <InfoRow label="Proof Document" value="Provided" />}
+                {cert.documentUrl && (
+                  <Box sx={{ mt: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      href={cert.documentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View Certificate
+                    </Button>
+                  </Box>
+                )}
               </Box>
             ))
           ) : (
