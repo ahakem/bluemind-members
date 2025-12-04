@@ -101,12 +101,16 @@ const MemberDashboard: React.FC = () => {
         const attendees: Attendee[] = [];
         for (const attDoc of attendanceSnapshot.docs) {
           const attData = attDoc.data();
+          // Only include confirmed or attended status
+          if (attData.status !== 'confirmed' && attData.status !== 'attended') {
+            continue;
+          }
           // Try to get member photo
           let photoUrl: string | undefined;
           try {
-            const memberDoc = await getDoc(doc(db, 'members', attData.memberId));
-            if (memberDoc.exists()) {
-              photoUrl = memberDoc.data().photoUrl;
+            const memberDocRef = await getDoc(doc(db, 'members', attData.memberId));
+            if (memberDocRef.exists()) {
+              photoUrl = memberDocRef.data().photoUrl;
             }
           } catch (e) {
             // Ignore photo fetch errors
