@@ -18,7 +18,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { Event, People, LocationOn, Euro, Payment } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   collection,
   getDocs,
@@ -48,6 +48,7 @@ const SessionBooking: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, userData } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
@@ -58,6 +59,9 @@ const SessionBooking: React.FC = () => {
     open: false,
     session: null,
   });
+
+  // Determine if we're in admin context
+  const isAdminContext = location.pathname.startsWith('/admin');
 
   useEffect(() => {
     if (currentUser) {
@@ -357,7 +361,7 @@ const SessionBooking: React.FC = () => {
                   color="primary"
                   size={isMobile ? 'small' : 'medium'}
                   startIcon={<Payment />}
-                  onClick={() => navigate('/member/payments')}
+                  onClick={() => navigate(isAdminContext ? '/admin/my-payments' : '/member/payments')}
                 >
                   {isMobile ? 'Pay' : 'Go to Payments'}
                 </Button>

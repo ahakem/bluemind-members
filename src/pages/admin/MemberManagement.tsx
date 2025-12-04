@@ -30,6 +30,8 @@ import {
   Timestamp,
   getDoc,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -229,15 +231,45 @@ const MemberManagement: React.FC = () => {
   };
 
   const handleDeleteUser = async (user: UserWithMember) => {
-    if (!window.confirm(`Are you sure you want to delete ${user.name}? This action cannot be undone.`)) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${user.name}?\n\n` +
+      `This will:\n` +
+      `• Remove user data from the database\n` +
+      `• Remove member profile data\n\n` +
+      `Note: The user's Firebase Authentication account must be manually deleted from the Firebase Console.\n\n` +
+      `This action cannot be undone.`
+    );
+    
+    if (!confirmed) {
       return;
     }
     
     try {
-      // Delete from both collections
+      // Delete from both Firestore collections
       await deleteDoc(doc(db, 'users', user.uid));
       await deleteDoc(doc(db, 'members', user.uid));
+      
+      // Also delete any related data
+      // Delete user's attendance records
+      const attendanceQuery = query(
+        collection(db, 'attendance'),
+        where('memberId', '==', user.uid)
+      );
+      const attendanceSnapshot = await getDocs(attendanceQuery);
+      const attendanceDeletes = attendanceSnapshot.docs.map(d => deleteDoc(doc(db, 'attendance', d.id)));
+      await Promise.all(attendanceDeletes);
+      
+      // Delete user's invoices
+      const invoicesQuery = query(
+        collection(db, 'invoices'),
+        where('memberId', '==', user.uid)
+      );
+      const invoicesSnapshot = await getDocs(invoicesQuery);
+      const invoiceDeletes = invoicesSnapshot.docs.map(d => deleteDoc(doc(db, 'invoices', d.id)));
+      await Promise.all(invoiceDeletes);
+      
       await fetchUsers();
+      alert(`${user.name} has been deleted from the database.\n\nRemember: You must also delete the user from Firebase Authentication Console manually.`);
     } catch (error) {
       console.error('Error deleting user:', error);
       alert('Error deleting user. Please try again.');
