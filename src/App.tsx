@@ -62,12 +62,18 @@ function App() {
               }
             >
               <Route index element={<AdminDashboard />} />
+              {/* Member features for admin */}
+              <Route path="my-dashboard" element={<MemberDashboard />} />
+              <Route path="booking" element={<SessionBooking />} />
+              <Route path="my-payments" element={<MemberPayments />} />
+              <Route path="personal-bests" element={<PersonalBests />} />
+              <Route path="profile" element={<MemberProfile />} />
+              {/* Management features */}
               <Route path="members" element={<MemberManagement />} />
               <Route path="sessions" element={<SessionManagement />} />
               <Route path="attendance" element={<AttendanceTracking />} />
               <Route path="payments" element={<PaymentVerification />} />
               <Route path="content" element={<ContentManagement />} />
-              <Route path="profile" element={<MemberProfile />} />
             </Route>
 
             {/* Member Routes */}

@@ -6,7 +6,6 @@ import {
   CardContent,
   Grid,
   Paper,
-  Alert,
 } from '@mui/material';
 import { EmojiEvents } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
@@ -47,11 +46,18 @@ const PersonalBests: React.FC = () => {
       icon: '🫁',
     },
     {
-      discipline: 'Dynamic Apnea (DYN)',
+      discipline: 'Dynamic with Fins (DYN)',
       value: member?.personalBests?.DYN,
       unit: 'meters',
-      description: 'Swimming underwater with fins',
+      description: 'Swimming underwater with monofin',
       icon: '🏊',
+    },
+    {
+      discipline: 'Dynamic Bifins (DYNBIFI)',
+      value: member?.personalBests?.DYNBIFI,
+      unit: 'meters',
+      description: 'Swimming underwater with bifins',
+      icon: '🦶',
     },
     {
       discipline: 'Dynamic No Fins (DNF)',
@@ -64,8 +70,22 @@ const PersonalBests: React.FC = () => {
       discipline: 'Constant Weight (CWT)',
       value: member?.personalBests?.CWT,
       unit: 'meters',
-      description: 'Diving to depth with fins',
+      description: 'Depth diving with monofin',
       icon: '🤿',
+    },
+    {
+      discipline: 'Constant Weight Bifins (CWTB)',
+      value: member?.personalBests?.CWTB,
+      unit: 'meters',
+      description: 'Depth diving with bifins',
+      icon: '🦿',
+    },
+    {
+      discipline: 'Constant No Fins (CNF)',
+      value: member?.personalBests?.CNF,
+      unit: 'meters',
+      description: 'Depth diving without fins',
+      icon: '🧘',
     },
   ];
 
@@ -85,13 +105,13 @@ const PersonalBests: React.FC = () => {
         <Typography variant="h4">Personal Bests</Typography>
       </Box>
 
-      <Alert severity="info" sx={{ mb: 3 }}>
-        Your personal bests are managed by the coach/admin. Contact them to update your records after achieving a new PB!
-      </Alert>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        Track your freediving achievements. Update your PBs in your profile settings.
+      </Typography>
 
       <Grid container spacing={3}>
         {pbData.map((pb, index) => (
-          <Grid item xs={12} sm={6} md={6} key={index}>
+          <Grid item xs={12} sm={6} md={4} key={index}>
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>

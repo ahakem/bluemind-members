@@ -12,7 +12,6 @@ import {
 import {
   Event,
   CheckCircle,
-  Warning,
   Payment as PaymentIcon,
 } from '@mui/icons-material';
 import {
@@ -104,14 +103,6 @@ const MemberDashboard: React.FC = () => {
     return <LinearProgress />;
   }
 
-  const getMedicalStatusColor = () => {
-    if (!member?.medicalCertificate.expiryDate) return 'default';
-    const status = member.medicalCertificate.status;
-    if (status === 'expired') return 'error';
-    if (status === 'expiring_soon') return 'warning';
-    return 'success';
-  };
-
   const getMembershipDaysRemaining = () => {
     if (!member?.membershipExpiry) return 0;
     return differenceInDays(member.membershipExpiry, new Date());
@@ -123,12 +114,6 @@ const MemberDashboard: React.FC = () => {
         Welcome, {member?.name}!
       </Typography>
 
-      {member?.medicalCertificate.status === 'expired' && (
-        <Alert severity="error" sx={{ mb: 2 }} icon={<Warning />}>
-          Your medical certificate has expired. Please update it to continue training.
-        </Alert>
-      )}
-
       {pendingInvoice && (
         <Alert severity="warning" sx={{ mb: 2 }} icon={<PaymentIcon />}>
           You have a pending payment. Please complete the payment to maintain your membership.
@@ -137,7 +122,7 @@ const MemberDashboard: React.FC = () => {
 
       <Grid container spacing={3}>
         {/* Membership Status */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" mb={2}>
@@ -160,30 +145,6 @@ const MemberDashboard: React.FC = () => {
                     ({getMembershipDaysRemaining()} days remaining)
                   </Typography>
                 </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Medical Certificate */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Box display="flex" alignItems="center" mb={2}>
-                <Warning sx={{ fontSize: 40, color: getMedicalStatusColor(), mr: 2 }} />
-                <Box>
-                  <Typography variant="h6">Medical Certificate</Typography>
-                  <Chip
-                    label={member?.medicalCertificate.status?.replace('_', ' ') || 'N/A'}
-                    color={getMedicalStatusColor()}
-                    size="small"
-                  />
-                </Box>
-              </Box>
-              {member?.medicalCertificate.expiryDate && (
-                <Typography variant="body2" color="text.secondary">
-                  Expires: {format(member.medicalCertificate.expiryDate, 'MMMM d, yyyy')}
-                </Typography>
               )}
             </CardContent>
           </Card>

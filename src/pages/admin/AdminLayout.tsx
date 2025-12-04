@@ -19,6 +19,9 @@ import {
   CheckCircle,
   Payment,
   Article,
+  CalendarMonth,
+  EmojiEvents,
+  Receipt,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import Header from '../../components/Header';
@@ -41,8 +44,17 @@ const AdminLayout: React.FC = () => {
     navigate('/');
   };
 
-  const menuItems = [
-    { text: 'Dashboard', icon: <Dashboard />, path: '/admin' },
+  // Member menu items (available to all)
+  const memberMenuItems = [
+    { text: 'My Dashboard', icon: <Dashboard />, path: '/admin/my-dashboard' },
+    { text: 'Book Sessions', icon: <CalendarMonth />, path: '/admin/booking' },
+    { text: 'My Payments', icon: <Receipt />, path: '/admin/my-payments' },
+    { text: 'Personal Bests', icon: <EmojiEvents />, path: '/admin/personal-bests' },
+  ];
+
+  // Admin-only menu items
+  const adminMenuItems = [
+    { text: 'Admin Dashboard', icon: <Dashboard />, path: '/admin' },
     { text: 'Members', icon: <People />, path: '/admin/members' },
     { text: 'Sessions', icon: <Event />, path: '/admin/sessions' },
     { text: 'Attendance', icon: <CheckCircle />, path: '/admin/attendance' },
@@ -54,12 +66,33 @@ const AdminLayout: React.FC = () => {
     <Box>
       <Toolbar>
         <Typography variant="h6" color="primary" fontWeight="bold">
-          Admin Panel
+          Blue Mind
         </Typography>
       </Toolbar>
       <Divider />
+      {/* Member Section */}
       <List>
-        {menuItems.map((item) => (
+        {memberMenuItems.map((item) => (
+          <ListItem key={item.text} disablePadding>
+            <ListItemButton
+              selected={location.pathname === item.path}
+              onClick={() => navigate(item.path)}
+            >
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItemButton>
+          </ListItem>
+        ))}
+      </List>
+      <Divider />
+      {/* Admin Section */}
+      <Box sx={{ px: 2, py: 1 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight="bold">
+          MANAGEMENT
+        </Typography>
+      </Box>
+      <List>
+        {adminMenuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
