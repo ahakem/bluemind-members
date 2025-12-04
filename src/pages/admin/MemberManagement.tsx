@@ -20,7 +20,7 @@ import {
   Checkbox,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Add, Edit, Warning, CheckCircle, Visibility } from '@mui/icons-material';
+import { Edit, Warning, CheckCircle, Visibility, Delete } from '@mui/icons-material';
 import {
   collection,
   getDocs,
@@ -28,11 +28,11 @@ import {
   updateDoc,
   doc,
   Timestamp,
-  query,
-  where,
   getDoc,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { useAuth } from '../../contexts/AuthContext';
 import { Member, User } from '../../types';
 import MemberDetailView from '../../components/MemberDetailView';
 
@@ -42,6 +42,8 @@ interface UserWithMember extends User {
 }
 
 const MemberManagement: React.FC = () => {
+  const { userData } = useAuth();
+  const isSuperAdmin = userData?.role === 'super-admin';
   const [users, setUsers] = useState<UserWithMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -226,6 +228,22 @@ const MemberManagement: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (user: UserWithMember) => {
+    if (!window.confirm(`Are you sure you want to delete ${user.name}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      // Delete from both collections
+      await deleteDoc(doc(db, 'users', user.uid));
+      await deleteDoc(doc(db, 'members', user.uid));
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Error deleting user. Please try again.');
+    }
+  };
+
   const columns: GridColDef[] = [
     { field: 'name', headerName: 'Name', width: 200 },
     { field: 'email', headerName: 'Email', width: 250 },
@@ -326,7 +344,7 @@ const MemberManagement: React.FC = () => {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 150,
+      width: isSuperAdmin ? 200 : 150,
       renderCell: (params: GridRenderCellParams) => (
         <Box>
           <IconButton
@@ -345,6 +363,16 @@ const MemberManagement: React.FC = () => {
           >
             <Edit />
           </IconButton>
+          {isSuperAdmin && (
+            <IconButton
+              color="error"
+              size="small"
+              onClick={() => handleDeleteUser(params.row as UserWithMember)}
+              title="Delete User"
+            >
+              <Delete />
+            </IconButton>
+          )}
         </Box>
       ),
     },

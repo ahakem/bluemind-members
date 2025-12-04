@@ -12,19 +12,13 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
   Tabs,
   Tab,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { Event, People, LocationOn, Euro } from '@mui/icons-material';
+import { Event, People, LocationOn, Euro, Payment } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import {
   collection,
   getDocs,
@@ -36,25 +30,28 @@ import {
   Timestamp,
   updateDoc,
   increment,
+  getDoc,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Session, Invoice } from '../../types';
-import { format, startOfDay, addDays } from 'date-fns';
+import { format, startOfDay } from 'date-fns';
 
 interface BookingInfo {
   sessionId: string;
   attendanceId: string;
   invoiceId?: string;
+  invoiceStatus?: string;
 }
 
 const SessionBooking: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const navigate = useNavigate();
   const { currentUser, userData } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tabValue, setTabValue] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; session: Session | null }>({
@@ -100,14 +97,36 @@ const SessionBooking: React.FC = () => {
         where('memberId', '==', currentUser.uid)
       );
       const attendanceSnapshot = await getDocs(attendanceQuery);
-      const bookings: BookingInfo[] = attendanceSnapshot.docs
-        .filter(doc => doc.data().status === 'confirmed')
-        .map(doc => ({
-          sessionId: doc.data().sessionId,
-          attendanceId: doc.id,
-          invoiceId: doc.data().invoiceId,
-        }));
-      setMyBookings(bookings);
+      
+      // Get invoice statuses for each booking
+      const bookingsWithStatus: BookingInfo[] = await Promise.all(
+        attendanceSnapshot.docs
+          .filter(doc => doc.data().status === 'confirmed')
+          .map(async (attendanceDoc) => {
+            const data = attendanceDoc.data();
+            let invoiceStatus = 'pending';
+            
+            if (data.invoiceId) {
+              try {
+                const invoiceDoc = await getDoc(doc(db, 'invoices', data.invoiceId));
+                if (invoiceDoc.exists()) {
+                  invoiceStatus = invoiceDoc.data().status;
+                }
+              } catch (e) {
+                console.error('Error fetching invoice:', e);
+              }
+            }
+            
+            return {
+              sessionId: data.sessionId,
+              attendanceId: attendanceDoc.id,
+              invoiceId: data.invoiceId,
+              invoiceStatus,
+            };
+          })
+      );
+      
+      setMyBookings(bookingsWithStatus);
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
       setError(error.message || 'Failed to load sessions');
@@ -186,7 +205,7 @@ const SessionBooking: React.FC = () => {
       });
 
       // Create attendance record with invoice reference
-      const attendanceRef = await addDoc(collection(db, 'attendance'), {
+      await addDoc(collection(db, 'attendance'), {
         sessionId: session.id,
         memberId: currentUser.uid,
         memberName: userData.name,
@@ -249,6 +268,21 @@ const SessionBooking: React.FC = () => {
     return myBookings.some(b => b.sessionId === sessionId);
   };
 
+  const getBookingStatus = (sessionId: string): { label: string; color: 'success' | 'warning' | 'info' | 'default' } => {
+    const booking = myBookings.find(b => b.sessionId === sessionId);
+    if (!booking) return { label: '', color: 'default' };
+    
+    switch (booking.invoiceStatus) {
+      case 'paid':
+        return { label: 'Confirmed', color: 'success' };
+      case 'transfer_initiated':
+        return { label: 'Awaiting Confirmation', color: 'info' };
+      case 'pending':
+      default:
+        return { label: 'Pending Payment', color: 'warning' };
+    }
+  };
+
   const today = startOfDay(new Date());
   const upcomingSessions = sessions.filter(s => s.date >= today);
   const myUpcomingBookings = upcomingSessions.filter(s => isBooked(s.id));
@@ -262,6 +296,7 @@ const SessionBooking: React.FC = () => {
 
   const SessionCard = ({ session }: { session: Session }) => {
     const booked = isBooked(session.id);
+    const bookingStatus = getBookingStatus(session.id);
     const isFull = session.currentAttendance >= session.capacity;
     const price = getPrice(session);
 
@@ -274,7 +309,7 @@ const SessionBooking: React.FC = () => {
               color={sessionTypeColors[session.type]}
               size="small"
             />
-            {booked && <Chip label="Booked" color="success" size="small" />}
+            {booked && <Chip label={bookingStatus.label} color={bookingStatus.color} size="small" />}
           </Box>
           
           <Box display="flex" alignItems="center" gap={1} mb={0.5}>
@@ -314,15 +349,29 @@ const SessionBooking: React.FC = () => {
           )}
           
           {booked ? (
-            <Button
-              fullWidth
-              variant="outlined"
-              color="error"
-              size={isMobile ? 'small' : 'medium'}
-              onClick={() => handleCancelBooking(session.id)}
-            >
-              Cancel
-            </Button>
+            <Box display="flex" flexDirection="column" gap={1}>
+              {bookingStatus.color !== 'success' && (
+                <Button
+                  fullWidth
+                  variant="contained"
+                  color="primary"
+                  size={isMobile ? 'small' : 'medium'}
+                  startIcon={<Payment />}
+                  onClick={() => navigate('/member/payments')}
+                >
+                  {isMobile ? 'Pay' : 'Go to Payments'}
+                </Button>
+              )}
+              <Button
+                fullWidth
+                variant="outlined"
+                color="error"
+                size={isMobile ? 'small' : 'medium'}
+                onClick={() => handleCancelBooking(session.id)}
+              >
+                Cancel
+              </Button>
+            </Box>
           ) : (
             <Button
               fullWidth
