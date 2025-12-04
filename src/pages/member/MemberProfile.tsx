@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -13,12 +13,15 @@ import {
   DialogActions,
   IconButton,
   InputAdornment,
+  Avatar,
+  CircularProgress,
 } from '@mui/material';
-import { Add, Delete, Info, Lock, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Add, Delete, Info, Lock, Visibility, VisibilityOff, CameraAlt } from '@mui/icons-material';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../config/firebase';
 import { Member } from '../../types';
 
 const MemberProfile: React.FC = () => {
@@ -29,6 +32,8 @@ const MemberProfile: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [openCertDialog, setOpenCertDialog] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     nickname: '',
@@ -283,6 +288,50 @@ const MemberProfile: React.FC = () => {
     }
   };
 
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      setError('Only PNG and JPG images are allowed');
+      return;
+    }
+
+    // Validate file size (1MB = 1048576 bytes)
+    if (file.size > 1048576) {
+      setError('Photo must be less than 1MB');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    setError('');
+
+    try {
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `profile-photos/${currentUser.uid}.${fileExtension}`;
+      const storageRef = ref(storage, fileName);
+
+      await uploadBytes(storageRef, file);
+      const photoUrl = await getDownloadURL(storageRef);
+
+      // Update member document with photo URL
+      await updateDoc(doc(db, 'members', currentUser.uid), {
+        photoUrl,
+        updatedAt: Timestamp.now(),
+      });
+
+      setSuccess('Profile photo updated!');
+      fetchMemberData();
+    } catch (err: any) {
+      console.error('Error uploading photo:', err);
+      setError(err.message || 'Failed to upload photo');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -318,13 +367,63 @@ const MemberProfile: React.FC = () => {
       )}
 
       <Grid container spacing={3}>
-        {/* Personal Information */}
+        {/* Profile Photo & Personal Information */}
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>
               Personal Information
             </Typography>
             <Grid container spacing={2}>
+              {/* Profile Photo */}
+              <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                <Box sx={{ position: 'relative' }}>
+                  <Avatar
+                    src={member.photoUrl || undefined}
+                    sx={{ 
+                      width: 120, 
+                      height: 120, 
+                      fontSize: '3rem',
+                      bgcolor: 'primary.main',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {member.name.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <IconButton
+                    sx={{
+                      position: 'absolute',
+                      bottom: 0,
+                      right: 0,
+                      bgcolor: 'background.paper',
+                      boxShadow: 1,
+                      '&:hover': { bgcolor: 'grey.100' },
+                    }}
+                    size="small"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                  >
+                    {uploadingPhoto ? (
+                      <CircularProgress size={20} />
+                    ) : (
+                      <CameraAlt fontSize="small" />
+                    )}
+                  </IconButton>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".png,.jpg,.jpeg"
+                    style={{ display: 'none' }}
+                    onChange={handlePhotoUpload}
+                  />
+                </Box>
+              </Grid>
+              <Grid item xs={12} sx={{ textAlign: 'center', mb: 2 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Click to upload photo (PNG/JPG, max 1MB)
+                </Typography>
+              </Grid>
+              
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth

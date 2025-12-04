@@ -137,9 +137,17 @@ const MemberDashboard: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}>
-        Welcome, {member?.name?.split(' ')[0]}!
-      </Typography>
+      <Box display="flex" alignItems="center" gap={2} mb={3}>
+        {member?.photoUrl && (
+          <Avatar 
+            src={member.photoUrl} 
+            sx={{ width: 56, height: 56 }}
+          />
+        )}
+        <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}>
+          Welcome, {member?.name?.split(' ')[0]}!
+        </Typography>
+      </Box>
 
       {pendingInvoice && (
         <Alert severity="warning" sx={{ mb: 2, fontSize: { xs: '0.8rem', sm: '0.875rem' } }} icon={<PaymentIcon />}>

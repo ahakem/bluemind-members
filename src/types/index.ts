@@ -38,6 +38,7 @@ export interface Member {
   name: string;
   nickname?: string; // Optional nickname
   email: string;
+  photoUrl?: string; // Profile photo URL
   dateOfBirth?: Date;
   address?: {
     street: string;
