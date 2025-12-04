@@ -37,6 +37,7 @@ import { format, differenceInDays } from 'date-fns';
 interface Attendee {
   id: string;
   memberName: string;
+  photoUrl?: string;
 }
 
 const MemberDashboard: React.FC = () => {
@@ -97,10 +98,25 @@ const MemberDashboard: React.FC = () => {
           where('sessionId', '==', nextSess.id)
         );
         const attendanceSnapshot = await getDocs(attendanceQuery);
-        const attendees = attendanceSnapshot.docs.map(doc => ({
-          id: doc.id,
-          memberName: doc.data().memberName,
-        }));
+        const attendees: Attendee[] = [];
+        for (const attDoc of attendanceSnapshot.docs) {
+          const attData = attDoc.data();
+          // Try to get member photo
+          let photoUrl: string | undefined;
+          try {
+            const memberDoc = await getDoc(doc(db, 'members', attData.memberId));
+            if (memberDoc.exists()) {
+              photoUrl = memberDoc.data().photoUrl;
+            }
+          } catch (e) {
+            // Ignore photo fetch errors
+          }
+          attendees.push({
+            id: attDoc.id,
+            memberName: attData.memberName,
+            photoUrl,
+          });
+        }
         setNextSessionAttendees(attendees);
       }
 
@@ -138,12 +154,17 @@ const MemberDashboard: React.FC = () => {
   return (
     <Box>
       <Box display="flex" alignItems="center" gap={2} mb={3}>
-        {member?.photoUrl && (
-          <Avatar 
-            src={member.photoUrl} 
-            sx={{ width: 56, height: 56 }}
-          />
-        )}
+        <Avatar 
+          src={member?.photoUrl || undefined} 
+          sx={{ 
+            width: 56, 
+            height: 56,
+            bgcolor: 'primary.main',
+            fontSize: '1.5rem',
+          }}
+        >
+          {!member?.photoUrl && member?.name?.charAt(0).toUpperCase()}
+        </Avatar>
         <Typography variant="h4" sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}>
           Welcome, {member?.name?.split(' ')[0]}!
         </Typography>
@@ -221,8 +242,8 @@ const MemberDashboard: React.FC = () => {
                         <AvatarGroup max={isMobile ? 4 : 6} sx={{ '& .MuiAvatar-root': { width: 28, height: 28, fontSize: '0.75rem' } }}>
                           {nextSessionAttendees.map((attendee) => (
                             <Tooltip key={attendee.id} title={attendee.memberName}>
-                              <Avatar sx={{ bgcolor: 'primary.main' }}>
-                                {attendee.memberName.charAt(0).toUpperCase()}
+                              <Avatar src={attendee.photoUrl || undefined} sx={{ bgcolor: 'primary.main' }}>
+                                {!attendee.photoUrl && attendee.memberName.charAt(0).toUpperCase()}
                               </Avatar>
                             </Tooltip>
                           ))}
