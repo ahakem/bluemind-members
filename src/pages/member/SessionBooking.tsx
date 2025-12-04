@@ -202,11 +202,25 @@ const SessionBooking: React.FC = () => {
     try {
       setError('');
 
-      // Check if already booked (prevent duplicates)
+      // Check if already booked (prevent duplicates) - local state check
       const existingBooking = myBookings.find(b => b.sessionId === session.id);
       if (existingBooking) {
         setError('You have already subscribed to this session!');
         handleCloseConfirmDialog();
+        return;
+      }
+
+      // Server-side duplicate check (in case of stale state or multiple tabs)
+      const duplicateCheckQuery = query(
+        collection(db, 'attendance'),
+        where('sessionId', '==', session.id),
+        where('memberId', '==', currentUser.uid)
+      );
+      const duplicateSnapshot = await getDocs(duplicateCheckQuery);
+      if (!duplicateSnapshot.empty) {
+        setError('You have already subscribed to this session!');
+        handleCloseConfirmDialog();
+        await fetchSessions(); // Refresh state
         return;
       }
 

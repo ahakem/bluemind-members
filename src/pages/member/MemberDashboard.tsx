@@ -231,7 +231,6 @@ const MemberDashboard: React.FC = () => {
                         {nextSessionAttendees.length} attending!!
                       </Typography>
                     </Box>
-                    hello
                     {nextSessionAttendees.length > 0 && (
                       <Box display="flex" alignItems="center" gap={1}>
                         <AvatarGroup max={isMobile ? 4 : 6} sx={{ '& .MuiAvatar-root': { width: 28, height: 28, fontSize: '0.75rem' } }}>
