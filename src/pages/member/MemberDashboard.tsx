@@ -105,20 +105,10 @@ const MemberDashboard: React.FC = () => {
           if (attData.status !== 'confirmed' && attData.status !== 'attended') {
             continue;
           }
-          // Try to get member photo
-          let photoUrl: string | undefined;
-          try {
-            const memberDocRef = await getDoc(doc(db, 'members', attData.memberId));
-            if (memberDocRef.exists()) {
-              photoUrl = memberDocRef.data().photoUrl;
-            }
-          } catch (e) {
-            // Ignore photo fetch errors
-          }
           attendees.push({
             id: attDoc.id,
             memberName: attData.memberName,
-            photoUrl,
+            photoUrl: attData.memberPhotoUrl || undefined,
           });
         }
         setNextSessionAttendees(attendees);

@@ -120,20 +120,10 @@ const SessionBooking: React.FC = () => {
           if (attData.status !== 'confirmed' && attData.status !== 'attended') {
             continue;
           }
-          // Try to get member photo
-          let photoUrl: string | undefined;
-          try {
-            const memberDocRef = await getDoc(doc(db, 'members', attData.memberId));
-            if (memberDocRef.exists()) {
-              photoUrl = memberDocRef.data().photoUrl;
-            }
-          } catch (e) {
-            // Ignore
-          }
           attendees.push({
             id: attDoc.id,
             memberName: attData.memberName,
-            photoUrl,
+            photoUrl: attData.memberPhotoUrl || undefined,
           });
         }
         attendeesMap[sess.id] = attendees;
@@ -253,11 +243,23 @@ const SessionBooking: React.FC = () => {
         updatedAt: Timestamp.now(),
       });
 
+      // Get member's photo URL
+      let memberPhotoUrl = '';
+      try {
+        const memberDoc = await getDoc(doc(db, 'members', currentUser.uid));
+        if (memberDoc.exists()) {
+          memberPhotoUrl = memberDoc.data().photoUrl || '';
+        }
+      } catch (e) {
+        // Ignore
+      }
+
       // Create attendance record with invoice reference
       await addDoc(collection(db, 'attendance'), {
         sessionId: session.id,
         memberId: currentUser.uid,
         memberName: userData.name,
+        memberPhotoUrl,
         status: 'confirmed',
         invoiceId: invoiceRef.id,
         rsvpAt: Timestamp.now(),
