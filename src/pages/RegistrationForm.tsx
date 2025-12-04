@@ -19,21 +19,45 @@ import {
   Checkbox,
   FormLabel,
   Divider,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import SignaturePad from '../components/SignaturePad';
+import PasswordStrength from '../components/PasswordStrength';
 import PageLayout from '../components/PageLayout';
 import { doc, setDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 
 const steps = [
-  'Account & Personal Info',
-  'Emergency Contact & Insurance',
-  'Certifications & Experience',
-  'Agreements & Signature',
+  { label: 'Account & Personal Info', short: 'Account' },
+  { label: 'Emergency Contact & Insurance', short: 'Emergency' },
+  { label: 'Certifications & Experience', short: 'Certs' },
+  { label: 'Agreements & Signature', short: 'Sign' },
 ];
 
+// Password validation helper
+const validatePassword = (password: string): { isValid: boolean; message: string } => {
+  if (!password) return { isValid: false, message: 'Password is required' };
+  if (password.length < 8) return { isValid: false, message: 'Password must be at least 8 characters' };
+  
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  
+  // Require at least 3 of the 4 criteria for a good password
+  const criteriaMet = [hasUppercase, hasLowercase, hasNumber].filter(Boolean).length;
+  
+  if (criteriaMet < 2) {
+    return { isValid: false, message: 'Password must include uppercase, lowercase, and numbers' };
+  }
+  
+  return { isValid: true, message: '' };
+};
+
 const RegistrationForm: React.FC = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -107,8 +131,13 @@ const RegistrationForm: React.FC = () => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email)) errors.email = 'Please enter a valid email address';
       }
-      if (!formData.password) errors.password = 'Password is required';
-      else if (formData.password.length < 6) errors.password = 'Password must be at least 6 characters';
+      
+      // Enhanced password validation
+      const passwordValidation = validatePassword(formData.password);
+      if (!passwordValidation.isValid) {
+        errors.password = passwordValidation.message;
+      }
+      
       if (!formData.confirmPassword) errors.confirmPassword = 'Please confirm your password';
       else if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords do not match';
       if (!formData.name) errors.name = 'Full name is required';
@@ -342,9 +371,11 @@ const RegistrationForm: React.FC = () => {
                 required
                 error={!!fieldErrors.email}
                 helperText={fieldErrors.email}
+                autoComplete="email"
+                inputProps={{ inputMode: 'email' }}
               />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 label="Password"
@@ -356,10 +387,12 @@ const RegistrationForm: React.FC = () => {
                 }}
                 required
                 error={!!fieldErrors.password}
-                helperText={fieldErrors.password || 'At least 6 characters'}
+                helperText={fieldErrors.password}
+                autoComplete="new-password"
               />
+              <PasswordStrength password={formData.password} />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 label="Confirm Password"
@@ -371,12 +404,13 @@ const RegistrationForm: React.FC = () => {
                 }}
                 required
                 error={!!fieldErrors.confirmPassword}
-                helperText={fieldErrors.confirmPassword}
+                helperText={fieldErrors.confirmPassword || (formData.confirmPassword && formData.password === formData.confirmPassword ? '✓ Passwords match' : '')}
+                autoComplete="new-password"
               />
             </Grid>
             
             <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
+              <Divider sx={{ my: 1 }} />
               <Typography variant="h6" gutterBottom>
                 Personal Information
               </Typography>
@@ -889,34 +923,56 @@ const RegistrationForm: React.FC = () => {
     <Box
       sx={{
         minHeight: 'calc(100vh - 200px)',
-        py: 4,
+        py: { xs: 2, sm: 4 },
       }}
     >
       <Container maxWidth="md">
-        <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
-          <Box textAlign="center" mb={4}>
+        <Paper 
+          elevation={3} 
+          sx={{ 
+            p: { xs: 2, sm: 4 }, 
+            borderRadius: 2,
+            mx: { xs: -1, sm: 0 },
+          }}
+        >
+          <Box textAlign="center" mb={{ xs: 2, sm: 4 }}>
             <Typography variant="h4" component="h1" gutterBottom color="primary">
               Blue Mind Freediving
             </Typography>
-            <Typography variant="h5" gutterBottom>
-              Member Registration Form
+            <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+              Member Registration
             </Typography>
           </Box>
 
-          <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-            {steps.map((label, index) => (
+          {/* Mobile-friendly stepper */}
+          <Stepper 
+            activeStep={activeStep} 
+            sx={{ 
+              mb: { xs: 2, sm: 4 },
+              '& .MuiStepConnector-line': {
+                minWidth: { xs: 12, sm: 24 },
+              },
+            }}
+            alternativeLabel={isMobile}
+          >
+            {steps.map((step, index) => (
               <Step 
-                key={label}
+                key={step.label}
                 sx={{
                   cursor: index < activeStep ? 'pointer' : 'default',
                   '& .MuiStepLabel-root': {
                     cursor: index < activeStep ? 'pointer' : 'default',
-                  }
+                  },
+                  px: { xs: 0, sm: 1 },
                 }}
                 onClick={() => handleStepClick(index)}
               >
                 <StepLabel
                   sx={{
+                    '& .MuiStepLabel-label': {
+                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                      mt: { xs: 0.5, sm: 0 },
+                    },
                     '&:hover': index < activeStep ? {
                       '& .MuiStepLabel-label': {
                         color: 'primary.main',
@@ -924,25 +980,33 @@ const RegistrationForm: React.FC = () => {
                     } : {}
                   }}
                 >
-                  {label}
+                  {isMobile ? step.short : step.label}
                 </StepLabel>
               </Step>
             ))}
           </Stepper>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
               {error}
             </Alert>
           )}
 
           {renderStepContent(activeStep)}
 
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              mt: { xs: 3, sm: 4 },
+              gap: 2,
+            }}
+          >
             <Button
               disabled={activeStep === 0}
               onClick={handleBack}
               variant="outlined"
+              sx={{ minWidth: { xs: 80, sm: 100 } }}
             >
               Back
             </Button>
@@ -952,12 +1016,18 @@ const RegistrationForm: React.FC = () => {
                   variant="contained"
                   onClick={handleSubmit}
                   disabled={loading}
-                  size="large"
+                  size={isMobile ? 'medium' : 'large'}
+                  sx={{ minWidth: { xs: 120, sm: 180 } }}
                 >
-                  {loading ? 'Submitting...' : 'Submit Registration'}
+                  {loading ? 'Submitting...' : (isMobile ? 'Submit' : 'Submit Registration')}
                 </Button>
               ) : (
-                <Button variant="contained" onClick={handleNext} size="large">
+                <Button 
+                  variant="contained" 
+                  onClick={handleNext} 
+                  size={isMobile ? 'medium' : 'large'}
+                  sx={{ minWidth: { xs: 80, sm: 100 } }}
+                >
                   Next
                 </Button>
               )}
@@ -967,7 +1037,7 @@ const RegistrationForm: React.FC = () => {
           <Box textAlign="center" mt={3}>
             <Typography variant="body2">
               Already have an account?{' '}
-              <Link to="/" style={{ color: '#0A4D68', textDecoration: 'none' }}>
+              <Link to="/" style={{ color: '#0A4D68', textDecoration: 'none', fontWeight: 500 }}>
                 Login here
               </Link>
             </Typography>

@@ -9,12 +9,16 @@ import {
   Typography,
   Alert,
   Link,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import PageLayout from '../components/PageLayout';
 import logoLight from '../assetes/logo-light.png';
 
 const Login: React.FC = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -58,21 +62,34 @@ const Login: React.FC = () => {
           minHeight: 'calc(100vh - 200px)',
           display: 'flex',
           alignItems: 'center',
-          py: 8,
+          py: { xs: 4, sm: 8 },
+          px: { xs: 1, sm: 2 },
         }}
       >
         <Container maxWidth="sm">
-          <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+          <Paper 
+            elevation={3} 
+            sx={{ 
+              p: { xs: 3, sm: 4 }, 
+              borderRadius: 2,
+            }}
+          >
             <Box textAlign="center" mb={3}>
               <img 
                 src={logoLight} 
                 alt="Blue Mind Freediving" 
                 style={{ 
-                  height: '80px',
-                  marginBottom: '20px',
+                  height: isMobile ? '60px' : '80px',
+                  marginBottom: isMobile ? '12px' : '20px',
                 }} 
               />
-              <Typography variant="h4" component="h1" gutterBottom color="primary">
+              <Typography 
+                variant="h4" 
+                component="h1" 
+                gutterBottom 
+                color="primary"
+                sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}
+              >
                 Member Login
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -96,6 +113,7 @@ const Login: React.FC = () => {
               margin="normal"
               required
               autoComplete="email"
+              inputProps={{ inputMode: 'email' }}
             />
             <TextField
               fullWidth

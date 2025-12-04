@@ -73,11 +73,15 @@ service cloud.firestore {
     
     // Sessions collection - stores training session schedules
     match /sessions/{sessionId} {
-      // All approved users can read sessions
-      allow read: if isApproved();
+      // All signed-in users can read sessions
+      allow read: if isSignedIn();
       
-      // Only admins can create, update, or delete sessions
-      allow create, update, delete: if isAdmin();
+      // Members can update currentAttendance, admins can update anything
+      allow update: if isSignedIn() && 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentAttendance']) || isAdmin());
+      
+      // Only admins can create or delete sessions
+      allow create, delete: if isAdmin();
     }
     
     // Attendance collection - tracks member attendance
@@ -88,13 +92,11 @@ service cloud.firestore {
       
       // Members can create their own bookings (RSVP)
       allow create: if isSignedIn() && 
-        isApproved() &&
-        request.resource.data.memberId == request.auth.uid &&
-        request.resource.data.status == 'confirmed';
+        request.resource.data.memberId == request.auth.uid;
       
       // Members can cancel their own bookings, admins can reject/delete any booking
       allow delete: if isSignedIn() && 
-        ((isApproved() && resource.data.memberId == request.auth.uid) || isAdmin());
+        (resource.data.memberId == request.auth.uid || isAdmin());
       
       // Admins can update attendance (mark as attended, no_show, etc.)
       allow update: if isAdmin();
@@ -108,7 +110,6 @@ service cloud.firestore {
       
       // Members can create their own invoices (for session subscriptions)
       allow create: if isSignedIn() && 
-        isApproved() &&
         request.resource.data.memberId == request.auth.uid;
       
       // Members can update their own invoice status to 'transfer_initiated' or 'cancelled'

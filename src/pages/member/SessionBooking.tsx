@@ -21,6 +21,8 @@ import {
   Paper,
   Tabs,
   Tab,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { Event, People, LocationOn, Euro } from '@mui/icons-material';
 import {
@@ -47,6 +49,8 @@ interface BookingInfo {
 }
 
 const SessionBooking: React.FC = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { currentUser, userData } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
@@ -263,8 +267,8 @@ const SessionBooking: React.FC = () => {
 
     return (
       <Card sx={{ height: '100%' }}>
-        <CardContent>
-          <Box display="flex" justifyContent="space-between" alignItems="start" mb={2}>
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Box display="flex" justifyContent="space-between" alignItems="start" mb={1.5} flexWrap="wrap" gap={0.5}>
             <Chip
               label={session.type.replace('_', ' ')}
               color={sessionTypeColors[session.type]}
@@ -273,38 +277,38 @@ const SessionBooking: React.FC = () => {
             {booked && <Chip label="Booked" color="success" size="small" />}
           </Box>
           
-          <Box display="flex" alignItems="center" gap={1} mb={1}>
+          <Box display="flex" alignItems="center" gap={1} mb={0.5}>
             <Event fontSize="small" color="action" />
-            <Typography variant="body1" fontWeight="bold">
-              {format(session.date, 'EEE, MMM d, yyyy')}
+            <Typography variant="body2" fontWeight="bold" sx={{ fontSize: { xs: '0.85rem', sm: '1rem' } }}>
+              {format(session.date, isMobile ? 'EEE, MMM d' : 'EEE, MMM d, yyyy')}
             </Typography>
           </Box>
           
-          <Typography variant="body2" color="text.secondary" mb={1}>
+          <Typography variant="body2" color="text.secondary" mb={0.5} sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>
             ⏰ {session.startTime} - {session.endTime}
           </Typography>
           
-          <Box display="flex" alignItems="center" gap={1} mb={1}>
+          <Box display="flex" alignItems="center" gap={1} mb={0.5}>
             <LocationOn fontSize="small" color="action" />
-            <Typography variant="body2">{session.locationName}</Typography>
+            <Typography variant="body2" sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>{session.locationName}</Typography>
           </Box>
           
-          <Box display="flex" alignItems="center" gap={1} mb={1}>
+          <Box display="flex" alignItems="center" gap={1} mb={0.5}>
             <People fontSize="small" color="action" />
-            <Typography variant="body2">
-              {session.currentAttendance}/{session.capacity} spots taken
+            <Typography variant="body2" sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}>
+              {session.currentAttendance}/{session.capacity} spots
             </Typography>
           </Box>
           
-          <Box display="flex" alignItems="center" gap={1} mb={2}>
+          <Box display="flex" alignItems="center" gap={1} mb={1.5}>
             <Euro fontSize="small" color="action" />
             <Typography variant="body2" fontWeight="bold" color="primary">
               €{price.toFixed(2)}
             </Typography>
           </Box>
           
-          {session.description && (
-            <Typography variant="body2" color="text.secondary" mb={2}>
+          {session.description && !isMobile && (
+            <Typography variant="body2" color="text.secondary" mb={2} sx={{ fontSize: '0.8rem' }}>
               {session.description}
             </Typography>
           )}
@@ -314,18 +318,20 @@ const SessionBooking: React.FC = () => {
               fullWidth
               variant="outlined"
               color="error"
+              size={isMobile ? 'small' : 'medium'}
               onClick={() => handleCancelBooking(session.id)}
             >
-              Cancel Booking
+              Cancel
             </Button>
           ) : (
             <Button
               fullWidth
               variant="contained"
               disabled={isFull}
+              size={isMobile ? 'small' : 'medium'}
               onClick={() => handleOpenConfirmDialog(session)}
             >
-              {isFull ? 'Session Full' : 'Subscribe'}
+              {isFull ? 'Full' : 'Subscribe'}
             </Button>
           )}
         </CardContent>
@@ -334,9 +340,9 @@ const SessionBooking: React.FC = () => {
   };
 
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Book Training Sessions
+    <Box sx={{ px: { xs: 0, sm: 0 } }}>
+      <Typography variant="h4" gutterBottom sx={{ fontSize: { xs: '1.5rem', sm: '2rem' } }}>
+        Book Sessions
       </Typography>
 
       {error && (
@@ -345,20 +351,31 @@ const SessionBooking: React.FC = () => {
         </Alert>
       )}
 
-      <Alert severity="info" sx={{ mb: 3 }}>
-        Subscribe to sessions to reserve your spot. An invoice will be created for each booking.
-        You can cancel your booking anytime before the session starts.
-      </Alert>
+      {!isMobile && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Subscribe to sessions to reserve your spot. An invoice will be created for each booking.
+        </Alert>
+      )}
 
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
-          <Tab label={`Available Sessions (${upcomingSessions.length})`} />
-          <Tab label={`My Bookings (${myUpcomingBookings.length})`} />
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs 
+          value={tabValue} 
+          onChange={(_, v) => setTabValue(v)}
+          variant={isMobile ? 'fullWidth' : 'standard'}
+        >
+          <Tab 
+            label={isMobile ? `Available (${upcomingSessions.length})` : `Available Sessions (${upcomingSessions.length})`} 
+            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+          />
+          <Tab 
+            label={isMobile ? `My Bookings (${myUpcomingBookings.length})` : `My Bookings (${myUpcomingBookings.length})`}
+            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+          />
         </Tabs>
       </Box>
 
       {tabValue === 0 && (
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {upcomingSessions.map(session => (
             <Grid item xs={12} sm={6} md={4} key={session.id}>
               <SessionCard session={session} />
@@ -375,7 +392,7 @@ const SessionBooking: React.FC = () => {
       )}
 
       {tabValue === 1 && (
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {myUpcomingBookings.map(session => (
             <Grid item xs={12} sm={6} md={4} key={session.id}>
               <SessionCard session={session} />
@@ -392,7 +409,7 @@ const SessionBooking: React.FC = () => {
       )}
 
       {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog.open} onClose={handleCloseConfirmDialog} maxWidth="sm" fullWidth>
+      <Dialog open={confirmDialog.open} onClose={handleCloseConfirmDialog} maxWidth="sm" fullWidth fullScreen={isMobile}>
         <DialogTitle>Confirm Booking</DialogTitle>
         <DialogContent>
           {confirmDialog.session && (

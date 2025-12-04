@@ -11,6 +11,8 @@ import {
   ListItemText,
   ListItemButton,
   Divider,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   Dashboard,
@@ -31,7 +33,9 @@ import Footer from '../../components/Footer';
 const drawerWidth = 240;
 
 const AdminLayout: React.FC = () => {
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [drawerOpen, setDrawerOpen] = useState(!isMobile);
   const { userData, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,8 +70,8 @@ const AdminLayout: React.FC = () => {
 
   const drawer = (
     <Box>
-      <Toolbar>
-        <Typography variant="h6" color="primary" fontWeight="bold">
+      <Toolbar sx={{ minHeight: { xs: 56, sm: 64 } }}>
+        <Typography variant="h6" color="primary" fontWeight="bold" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
           Blue Mind
         </Typography>
       </Toolbar>
@@ -78,10 +82,17 @@ const AdminLayout: React.FC = () => {
           <ListItem key={item.text} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
-              onClick={() => navigate(item.path)}
+              onClick={() => {
+                navigate(item.path);
+                if (isMobile) setDrawerOpen(false);
+              }}
+              sx={{ py: { xs: 1.5, sm: 1 } }}
             >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemIcon sx={{ minWidth: { xs: 40, sm: 56 } }}>{item.icon}</ListItemIcon>
+              <ListItemText 
+                primary={item.text} 
+                primaryTypographyProps={{ fontSize: { xs: '0.85rem', sm: '1rem' } }}
+              />
             </ListItemButton>
           </ListItem>
         ))}
@@ -98,10 +109,17 @@ const AdminLayout: React.FC = () => {
           <ListItem key={item.text} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
-              onClick={() => navigate(item.path)}
+              onClick={() => {
+                navigate(item.path);
+                if (isMobile) setDrawerOpen(false);
+              }}
+              sx={{ py: { xs: 1.5, sm: 1 } }}
             >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemIcon sx={{ minWidth: { xs: 40, sm: 56 } }}>{item.icon}</ListItemIcon>
+              <ListItemText 
+                primary={item.text} 
+                primaryTypographyProps={{ fontSize: { xs: '0.85rem', sm: '1rem' } }}
+              />
             </ListItemButton>
           </ListItem>
         ))}
@@ -119,16 +137,20 @@ const AdminLayout: React.FC = () => {
       />
       <Box sx={{ display: 'flex', flex: 1 }}>
         <Drawer
-          variant="persistent"
+          variant={isMobile ? 'temporary' : 'persistent'}
           open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          ModalProps={{
+            keepMounted: true,
+          }}
           sx={{
-            width: drawerOpen ? drawerWidth : 0,
+            width: drawerOpen && !isMobile ? drawerWidth : 0,
             flexShrink: 0,
             '& .MuiDrawer-paper': { 
               boxSizing: 'border-box', 
               width: drawerWidth,
-              top: '70px',
-              height: 'calc(100vh - 70px)',
+              top: isMobile ? 0 : '70px',
+              height: isMobile ? '100vh' : 'calc(100vh - 70px)',
               transition: 'width 0.2s ease-in-out',
             },
           }}
@@ -140,10 +162,11 @@ const AdminLayout: React.FC = () => {
           component="main"
           sx={{
             flexGrow: 1,
-            p: 3,
+            p: { xs: 2, sm: 3 },
             bgcolor: 'background.default',
             minHeight: 'calc(100vh - 70px)',
             transition: 'margin-left 0.2s ease-in-out',
+            width: '100%',
           }}
         >
           <Outlet />
