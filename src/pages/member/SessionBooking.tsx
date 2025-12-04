@@ -107,21 +107,25 @@ const SessionBooking: React.FC = () => {
 
       // Fetch attendees for all sessions
       const attendeesMap: Record<string, SessionAttendee[]> = {};
-      for (const session of sessionsList) {
+      for (const sess of sessionsList) {
         const sessionAttQuery = query(
           collection(db, 'attendance'),
-          where('sessionId', '==', session.id)
+          where('sessionId', '==', sess.id)
         );
         const sessionAttSnapshot = await getDocs(sessionAttQuery);
         const attendees: SessionAttendee[] = [];
         for (const attDoc of sessionAttSnapshot.docs) {
           const attData = attDoc.data();
+          // Only include confirmed or attended status
+          if (attData.status !== 'confirmed' && attData.status !== 'attended') {
+            continue;
+          }
           // Try to get member photo
           let photoUrl: string | undefined;
           try {
-            const memberDoc = await getDoc(doc(db, 'members', attData.memberId));
-            if (memberDoc.exists()) {
-              photoUrl = memberDoc.data().photoUrl;
+            const memberDocRef = await getDoc(doc(db, 'members', attData.memberId));
+            if (memberDocRef.exists()) {
+              photoUrl = memberDocRef.data().photoUrl;
             }
           } catch (e) {
             // Ignore
@@ -132,7 +136,7 @@ const SessionBooking: React.FC = () => {
             photoUrl,
           });
         }
-        attendeesMap[session.id] = attendees;
+        attendeesMap[sess.id] = attendees;
       }
       setSessionAttendees(attendeesMap);
 
