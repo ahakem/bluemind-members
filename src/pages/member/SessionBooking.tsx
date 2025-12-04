@@ -119,8 +119,8 @@ const SessionBooking: React.FC = () => {
   };
 
   const getPrice = (session: Session) => {
-    // Check if user is board member
-    const isBoardMember = userData?.role === 'board' || userData?.role === 'admin' || userData?.role === 'super-admin';
+    // Check if user is board member (separate flag, not a role)
+    const isBoardMember = userData?.isBoardMember || false;
     return isBoardMember ? (session.priceBoard || 0) : (session.priceMember || 0);
   };
 

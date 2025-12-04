@@ -1,12 +1,13 @@
 // TypeScript interfaces for Firestore data models
 
-export type UserRole = 'member' | 'board' | 'admin' | 'coach' | 'super-admin';
+export type UserRole = 'member' | 'admin' | 'coach' | 'super-admin';
 
 export interface User {
   uid: string;
   email: string;
   name: string;
   role: UserRole;
+  isBoardMember?: boolean; // Separate flag for board members
   createdAt: Date;
   approved: boolean;
 }

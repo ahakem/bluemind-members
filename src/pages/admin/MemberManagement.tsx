@@ -16,6 +16,8 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Add, Edit, Warning, CheckCircle, Visibility } from '@mui/icons-material';
@@ -49,6 +51,7 @@ const MemberManagement: React.FC = () => {
   const [formData, setFormData] = useState({
     approved: false,
     role: 'member',
+    isBoardMember: false,
     phone: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
@@ -126,6 +129,7 @@ const MemberManagement: React.FC = () => {
       setFormData({
         approved: user.approved || false,
         role: user.role || 'member',
+        isBoardMember: (user as any).isBoardMember || false,
         phone: user.memberData?.phone || '',
         emergencyContactName: user.memberData?.emergencyContact?.name || '',
         emergencyContactPhone: user.memberData?.emergencyContact?.phone || '',
@@ -140,6 +144,7 @@ const MemberManagement: React.FC = () => {
       setFormData({
         approved: false,
         role: 'member',
+        isBoardMember: false,
         phone: '',
         emergencyContactName: '',
         emergencyContactPhone: '',
@@ -170,10 +175,11 @@ const MemberManagement: React.FC = () => {
     if (!selectedUser) return;
 
     try {
-      // Update user document (role and approval status)
+      // Update user document (role, approval status, and board member flag)
       await updateDoc(doc(db, 'users', selectedUser.uid), {
         role: formData.role,
         approved: formData.approved,
+        isBoardMember: formData.isBoardMember,
       });
 
       // Create or update member document
@@ -226,26 +232,34 @@ const MemberManagement: React.FC = () => {
     { 
       field: 'phone', 
       headerName: 'Phone', 
-      width: 150,
+      width: 130,
       valueGetter: (params) => params.row.memberData?.phone || 'N/A',
     },
     {
       field: 'role',
       headerName: 'Role',
-      width: 130,
+      width: 100,
       renderCell: (params: GridRenderCellParams) => {
         const role = params.value as string;
         let color: any = 'default';
         if (role === 'admin' || role === 'super-admin') color = 'error';
-        else if (role === 'board') color = 'secondary';
         else if (role === 'coach') color = 'primary';
         return <Chip label={role} color={color} size="small" />;
       },
     },
     {
+      field: 'isBoardMember',
+      headerName: 'Board',
+      width: 80,
+      renderCell: (params: GridRenderCellParams) => {
+        const isBoard = params.value as boolean;
+        return isBoard ? <Chip label="Yes" color="secondary" size="small" /> : null;
+      },
+    },
+    {
       field: 'approved',
       headerName: 'Approved',
-      width: 120,
+      width: 100,
       renderCell: (params: GridRenderCellParams) => {
         const approved = params.value as boolean;
         return (
@@ -260,7 +274,7 @@ const MemberManagement: React.FC = () => {
     {
       field: 'membershipStatus',
       headerName: 'Membership',
-      width: 130,
+      width: 110,
       valueGetter: (params) => params.row.memberData?.membershipStatus || 'N/A',
       renderCell: (params: GridRenderCellParams) => {
         const status = params.row.memberData?.membershipStatus;
@@ -382,7 +396,6 @@ const MemberManagement: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                 >
                   <MenuItem value="member">Member</MenuItem>
-                  <MenuItem value="board">Board Member</MenuItem>
                   <MenuItem value="coach">Coach</MenuItem>
                   <MenuItem value="admin">Admin</MenuItem>
                 </Select>
@@ -400,6 +413,17 @@ const MemberManagement: React.FC = () => {
                   <MenuItem value="true">Approved</MenuItem>
                 </Select>
               </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.isBoardMember}
+                    onChange={(e) => setFormData({ ...formData, isBoardMember: e.target.checked })}
+                  />
+                }
+                label="Board Member (gets board member pricing)"
+              />
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>

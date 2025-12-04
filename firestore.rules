@@ -107,15 +107,18 @@ service cloud.firestore {
       allow read: if isSignedIn() && 
         (resource.data.memberId == request.auth.uid || isAdmin());
       
-      // Only admins can create invoices
-      allow create: if isAdmin();
+      // Members can create their own invoices (for session subscriptions)
+      allow create: if isSignedIn() && 
+        isApproved() &&
+        request.resource.data.memberId == request.auth.uid;
       
-      // Members can update their own invoice status to 'transfer_initiated'
+      // Members can update their own invoice status to 'transfer_initiated' or 'cancelled'
       allow update: if isSignedIn() && 
         (
           (resource.data.memberId == request.auth.uid && 
-           request.resource.data.status == 'transfer_initiated' &&
-           resource.data.status == 'pending') ||
+           (request.resource.data.status == 'transfer_initiated' || 
+            request.resource.data.status == 'cancelled') &&
+           resource.data.status in ['pending', 'transfer_initiated']) ||
           isAdmin()
         );
       
@@ -129,6 +132,24 @@ service cloud.firestore {
       allow read: if true;
       
       // Only admins can create, update, or delete content
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Locations collection - stores pool locations
+    match /locations/{locationId} {
+      // All approved users can read locations
+      allow read: if isApproved();
+      
+      // Only admins can create, update, or delete locations
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Bank details collection - stores payment bank information
+    match /bankDetails/{bankId} {
+      // All approved users can read bank details (for payment info)
+      allow read: if isApproved();
+      
+      // Only admins can create, update, or delete bank details
       allow create, update, delete: if isAdmin();
     }
   }
