@@ -13,6 +13,7 @@ import {
   FormControlLabel,
   Button,
   Alert,
+  Avatar,
 } from '@mui/material';
 import {
   collection,
@@ -204,15 +205,23 @@ const AttendanceTracking: React.FC = () => {
               <Grid container spacing={2}>
                 {members.map(member => (
                   <Grid item xs={12} sm={6} md={4} key={member.uid}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={attendance[member.uid] || false}
-                          onChange={(e) => handleAttendanceChange(member.uid, e.target.checked)}
-                        />
-                      }
-                      label={member.name}
-                    />
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Avatar 
+                        src={member.photoUrl || undefined}
+                        sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}
+                      >
+                        {!member.photoUrl && member.name.charAt(0).toUpperCase()}
+                      </Avatar>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={attendance[member.uid] || false}
+                            onChange={(e) => handleAttendanceChange(member.uid, e.target.checked)}
+                          />
+                        }
+                        label={member.name}
+                      />
+                    </Box>
                   </Grid>
                 ))}
               </Grid>

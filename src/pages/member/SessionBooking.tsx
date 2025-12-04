@@ -16,6 +16,9 @@ import {
   Tab,
   useMediaQuery,
   useTheme,
+  Avatar,
+  AvatarGroup,
+  Tooltip,
 } from '@mui/material';
 import { Event, People, LocationOn, Euro, Payment } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -44,6 +47,12 @@ interface BookingInfo {
   invoiceStatus?: string;
 }
 
+interface SessionAttendee {
+  id: string;
+  memberName: string;
+  photoUrl?: string;
+}
+
 const SessionBooking: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -52,6 +61,7 @@ const SessionBooking: React.FC = () => {
   const { currentUser, userData } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
+  const [sessionAttendees, setSessionAttendees] = useState<Record<string, SessionAttendee[]>>({});
   const [, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tabValue, setTabValue] = useState(0);
@@ -94,6 +104,37 @@ const SessionBooking: React.FC = () => {
       }) as Session[];
 
       setSessions(sessionsList.sort((a, b) => a.date.getTime() - b.date.getTime()));
+
+      // Fetch attendees for all sessions
+      const attendeesMap: Record<string, SessionAttendee[]> = {};
+      for (const session of sessionsList) {
+        const sessionAttQuery = query(
+          collection(db, 'attendance'),
+          where('sessionId', '==', session.id)
+        );
+        const sessionAttSnapshot = await getDocs(sessionAttQuery);
+        const attendees: SessionAttendee[] = [];
+        for (const attDoc of sessionAttSnapshot.docs) {
+          const attData = attDoc.data();
+          // Try to get member photo
+          let photoUrl: string | undefined;
+          try {
+            const memberDoc = await getDoc(doc(db, 'members', attData.memberId));
+            if (memberDoc.exists()) {
+              photoUrl = memberDoc.data().photoUrl;
+            }
+          } catch (e) {
+            // Ignore
+          }
+          attendees.push({
+            id: attDoc.id,
+            memberName: attData.memberName,
+            photoUrl,
+          });
+        }
+        attendeesMap[session.id] = attendees;
+      }
+      setSessionAttendees(attendeesMap);
 
       // Fetch my bookings
       const attendanceQuery = query(
@@ -338,6 +379,21 @@ const SessionBooking: React.FC = () => {
               {session.currentAttendance}/{session.capacity} spots
             </Typography>
           </Box>
+
+          {/* Attendees avatars */}
+          {sessionAttendees[session.id]?.length > 0 && (
+            <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+              <AvatarGroup max={isMobile ? 4 : 5} sx={{ '& .MuiAvatar-root': { width: 24, height: 24, fontSize: '0.7rem' } }}>
+                {sessionAttendees[session.id].map((attendee) => (
+                  <Tooltip key={attendee.id} title={attendee.memberName}>
+                    <Avatar src={attendee.photoUrl || undefined} sx={{ bgcolor: 'primary.main' }}>
+                      {!attendee.photoUrl && attendee.memberName.charAt(0).toUpperCase()}
+                    </Avatar>
+                  </Tooltip>
+                ))}
+              </AvatarGroup>
+            </Box>
+          )}
           
           <Box display="flex" alignItems="center" gap={1} mb={1.5}>
             <Euro fontSize="small" color="action" />
