@@ -228,9 +228,10 @@ const MemberDashboard: React.FC = () => {
                     <Box display="flex" alignItems="center" gap={1} mb={1}>
                       <People fontSize="small" color="action" />
                       <Typography variant="body2" color="text.secondary">
-                        {nextSessionAttendees.length} attending
+                        {nextSessionAttendees.length} attending!!
                       </Typography>
                     </Box>
+                    hello
                     {nextSessionAttendees.length > 0 && (
                       <Box display="flex" alignItems="center" gap={1}>
                         <AvatarGroup max={isMobile ? 4 : 6} sx={{ '& .MuiAvatar-root': { width: 28, height: 28, fontSize: '0.75rem' } }}>

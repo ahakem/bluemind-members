@@ -86,9 +86,8 @@ service cloud.firestore {
     
     // Attendance collection - tracks member attendance
     match /attendance/{attendanceId} {
-      // Members can read their own attendance, admins can read all
-      allow read: if isSignedIn() && 
-        (resource.data.memberId == request.auth.uid || isAdmin());
+      // All signed-in users can read attendance (to see who's attending sessions)
+      allow read: if isSignedIn();
       
       // Members can create their own bookings (RSVP)
       allow create: if isSignedIn() && 
