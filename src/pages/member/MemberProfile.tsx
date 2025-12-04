@@ -16,7 +16,7 @@ import {
   Avatar,
   CircularProgress,
 } from '@mui/material';
-import { Add, Delete, Info, Lock, Visibility, VisibilityOff, CameraAlt } from '@mui/icons-material';
+import { Add, Delete, Info, Lock, Visibility, VisibilityOff, CameraAlt, CloudUpload, CheckCircle } from '@mui/icons-material';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { useAuth } from '../../contexts/AuthContext';
 import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -57,8 +57,8 @@ const MemberProfile: React.FC = () => {
   const [newCert, setNewCert] = useState({
     organization: '',
     level: '',
-    date: '',
   });
+  const [newCertFile, setNewCertFile] = useState<File | null>(null);
 
   // Password change state
   const [openPasswordDialog, setOpenPasswordDialog] = useState(false);
@@ -170,8 +170,13 @@ const MemberProfile: React.FC = () => {
   };
 
   const handleAddCertification = async () => {
-    if (!currentUser || !member || !newCert.organization || !newCert.level || !newCert.date) {
-      setError('Please fill in all certification fields');
+    if (!currentUser || !member || !newCert.organization || !newCert.level) {
+      setError('Please fill in organization and level');
+      return;
+    }
+
+    if (!newCertFile) {
+      setError('Please upload your certification document');
       return;
     }
 
@@ -179,12 +184,21 @@ const MemberProfile: React.FC = () => {
     setError('');
 
     try {
+      // Upload certification file
+      let certFileUrl = null;
+      const fileExtension = newCertFile.name.split('.').pop();
+      const fileName = `certifications/${currentUser.uid}_${Date.now()}.${fileExtension}`;
+      const storageRef = ref(storage, fileName);
+      
+      await uploadBytes(storageRef, newCertFile);
+      certFileUrl = await getDownloadURL(storageRef);
+
       const updatedCerts = [
         ...(member.certifications || []),
         {
           organization: newCert.organization,
           level: newCert.level,
-          date: Timestamp.fromDate(new Date(newCert.date)),
+          documentUrl: certFileUrl,
         },
       ];
 
@@ -193,7 +207,8 @@ const MemberProfile: React.FC = () => {
         updatedAt: Timestamp.now(),
       });
 
-      setNewCert({ organization: '', level: '', date: '' });
+      setNewCert({ organization: '', level: '' });
+      setNewCertFile(null);
       setOpenCertDialog(false);
       setSuccess('Certification added successfully!');
       fetchMemberData();
@@ -766,21 +781,76 @@ const MemberProfile: React.FC = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Certification Date"
-                type="date"
-                value={newCert.date}
-                onChange={(e) => setNewCert({ ...newCert, date: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-              />
+              <Typography variant="subtitle2" gutterBottom>
+                Upload Certification Document
+              </Typography>
+              <Box 
+                sx={{ 
+                  border: '2px dashed #ccc',
+                  borderRadius: 2,
+                  p: 3,
+                  textAlign: 'center',
+                  bgcolor: newCertFile ? 'success.light' : 'grey.50',
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'grey.100' },
+                }}
+                onClick={() => document.getElementById('cert-file-input-profile')?.click()}
+              >
+                <input
+                  id="cert-file-input-profile"
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+                      if (!validTypes.includes(file.type)) {
+                        setError('Only PNG, JPG, and PDF files are allowed');
+                        return;
+                      }
+                      if (file.size > 1048576) {
+                        setError('File size must be less than 1MB');
+                        return;
+                      }
+                      setNewCertFile(file);
+                      setError('');
+                    }
+                  }}
+                />
+                {newCertFile ? (
+                  <Box>
+                    <CheckCircle color="success" sx={{ fontSize: 40, mb: 1 }} />
+                    <Typography variant="body2" color="success.dark" fontWeight="bold">
+                      {newCertFile.name}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ({(newCertFile.size / 1024).toFixed(1)} KB) - Click to change
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    <CloudUpload sx={{ fontSize: 40, color: 'grey.500', mb: 1 }} />
+                    <Typography variant="body2">
+                      Click to upload
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      PNG, JPG, or PDF (max 1MB)
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenCertDialog(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setOpenCertDialog(false);
+            setNewCert({ organization: '', level: '' });
+            setNewCertFile(null);
+          }}>Cancel</Button>
           <Button onClick={handleAddCertification} variant="contained" disabled={saving}>
-            Add
+            {saving ? 'Uploading...' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
