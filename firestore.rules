@@ -92,10 +92,9 @@ service cloud.firestore {
         request.resource.data.memberId == request.auth.uid &&
         request.resource.data.status == 'confirmed';
       
-      // Members can cancel their own bookings
+      // Members can cancel their own bookings, admins can reject/delete any booking
       allow delete: if isSignedIn() && 
-        isApproved() &&
-        resource.data.memberId == request.auth.uid;
+        ((isApproved() && resource.data.memberId == request.auth.uid) || isAdmin());
       
       // Admins can update attendance (mark as attended, no_show, etc.)
       allow update: if isAdmin();
@@ -137,8 +136,8 @@ service cloud.firestore {
     
     // Locations collection - stores pool locations
     match /locations/{locationId} {
-      // All approved users can read locations
-      allow read: if isApproved();
+      // All signed-in users can read locations
+      allow read: if isSignedIn();
       
       // Only admins can create, update, or delete locations
       allow create, update, delete: if isAdmin();
@@ -146,8 +145,8 @@ service cloud.firestore {
     
     // Bank details collection - stores payment bank information
     match /bankDetails/{bankId} {
-      // All approved users can read bank details (for payment info)
-      allow read: if isApproved();
+      // All signed-in users can read bank details (for payment info)
+      allow read: if isSignedIn();
       
       // Only admins can create, update, or delete bank details
       allow create, update, delete: if isAdmin();

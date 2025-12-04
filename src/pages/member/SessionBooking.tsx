@@ -140,6 +140,14 @@ const SessionBooking: React.FC = () => {
     try {
       setError('');
 
+      // Check if already booked (prevent duplicates)
+      const existingBooking = myBookings.find(b => b.sessionId === session.id);
+      if (existingBooking) {
+        setError('You have already subscribed to this session!');
+        handleCloseConfirmDialog();
+        return;
+      }
+
       if (session.currentAttendance >= session.capacity) {
         setError('This session is full!');
         handleCloseConfirmDialog();
