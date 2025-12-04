@@ -21,13 +21,16 @@ import {
   Divider,
   useMediaQuery,
   useTheme,
+  CircularProgress,
 } from '@mui/material';
+import { CloudUpload, CheckCircle } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import SignaturePad from '../components/SignaturePad';
 import PasswordStrength from '../components/PasswordStrength';
 import PageLayout from '../components/PageLayout';
 import { doc, setDoc, Timestamp, getDoc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth, storage } from '../config/firebase';
 
 const steps = [
   { label: 'Account & Personal Info', short: 'Account' },
@@ -55,6 +58,25 @@ const validatePassword = (password: string): { isValid: boolean; message: string
   return { isValid: true, message: '' };
 };
 
+// Phone number validation - accepts international formats
+const validatePhone = (phone: string): { isValid: boolean; message: string } => {
+  if (!phone) return { isValid: false, message: 'Phone number is required' };
+  // Remove spaces, dashes, parentheses for validation
+  const cleaned = phone.replace(/[\s\-()]/g, '');
+  // Must start with + or digit, and be 8-15 digits
+  const phoneRegex = /^\+?[0-9]{8,15}$/;
+  if (!phoneRegex.test(cleaned)) {
+    return { isValid: false, message: 'Please enter a valid phone number (e.g., +31612345678)' };
+  }
+  return { isValid: true, message: '' };
+};
+
+// Format phone number as user types
+const formatPhoneNumber = (value: string): string => {
+  // Only allow digits, +, spaces, dashes, parentheses
+  return value.replace(/[^0-9+\s\-()]/g, '');
+};
+
 const RegistrationForm: React.FC = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -73,6 +95,10 @@ const RegistrationForm: React.FC = () => {
 
   // Field-level errors for inline validation
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Certificate file upload
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certFileUploading, setCertFileUploading] = useState(false);
 
   // Step 1: Account & Personal Info
   const [formData, setFormData] = useState({
@@ -141,8 +167,22 @@ const RegistrationForm: React.FC = () => {
       if (!formData.confirmPassword) errors.confirmPassword = 'Please confirm your password';
       else if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords do not match';
       if (!formData.name) errors.name = 'Full name is required';
-      if (!formData.dateOfBirth) errors.dateOfBirth = 'Date of birth is required';
-      if (!formData.phone) errors.phone = 'Phone number is required';
+      if (!formData.dateOfBirth) {
+        errors.dateOfBirth = 'Date of birth is required';
+      } else {
+        const birthDate = new Date(formData.dateOfBirth);
+        const today = new Date();
+        if (birthDate > today) {
+          errors.dateOfBirth = 'Date of birth cannot be in the future';
+        }
+      }
+      
+      // Phone validation
+      const phoneValidation = validatePhone(formData.phone);
+      if (!phoneValidation.isValid) {
+        errors.phone = phoneValidation.message;
+      }
+      
       if (!formData.street) errors.street = 'Street address is required';
       if (!formData.city) errors.city = 'City is required';
       if (!formData.postalCode) errors.postalCode = 'Postal code is required';
@@ -156,7 +196,13 @@ const RegistrationForm: React.FC = () => {
 
     if (activeStep === 1) {
       if (!formData.emergencyName) errors.emergencyName = 'Emergency contact name is required';
-      if (!formData.emergencyPhone) errors.emergencyPhone = 'Emergency contact phone is required';
+      
+      // Emergency phone validation
+      const emergencyPhoneValidation = validatePhone(formData.emergencyPhone);
+      if (!emergencyPhoneValidation.isValid) {
+        errors.emergencyPhone = emergencyPhoneValidation.message;
+      }
+      
       if (!formData.emergencyRelationship) errors.emergencyRelationship = 'Relationship is required';
       if (formData.hasInsurance === 'no') {
         errors.hasInsurance = 'Valid health insurance in the Netherlands is required to join';
@@ -173,6 +219,14 @@ const RegistrationForm: React.FC = () => {
       if (!formData.certOrganization) errors.certOrganization = 'Organization is required';
       if (!formData.certLevel) errors.certLevel = 'Certification level is required';
       if (!formData.certDate) errors.certDate = 'Certification date is required';
+      else {
+        const certDate = new Date(formData.certDate);
+        const today = new Date();
+        if (certDate > today) {
+          errors.certDate = 'Certification date cannot be in the future';
+        }
+      }
+      if (!certFile) errors.certFile = 'Please upload your certification document';
       
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
@@ -270,6 +324,20 @@ const RegistrationForm: React.FC = () => {
       }
       
       // Create comprehensive member document
+      let certFileUrl = null;
+      
+      // Upload certification file if provided
+      if (certFile) {
+        setCertFileUploading(true);
+        const fileExtension = certFile.name.split('.').pop();
+        const fileName = `certifications/${userId}_${Date.now()}.${fileExtension}`;
+        const storageRef = ref(storage, fileName);
+        
+        await uploadBytes(storageRef, certFile);
+        certFileUrl = await getDownloadURL(storageRef);
+        setCertFileUploading(false);
+      }
+      
       const memberData = {
         uid: userId!,
         name: formData.name,
@@ -296,6 +364,7 @@ const RegistrationForm: React.FC = () => {
           organization: formData.certOrganization,
           level: formData.certLevel,
           date: Timestamp.fromDate(new Date(formData.certDate)),
+          documentUrl: certFileUrl,
         }],
         medicalCertificate: {
           expiryDate: null,
@@ -450,6 +519,7 @@ const RegistrationForm: React.FC = () => {
                   if (fieldErrors.dateOfBirth) setFieldErrors({ ...fieldErrors, dateOfBirth: '' });
                 }}
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ max: new Date().toISOString().split('T')[0] }}
                 required
                 error={!!fieldErrors.dateOfBirth}
                 helperText={fieldErrors.dateOfBirth}
@@ -459,14 +529,21 @@ const RegistrationForm: React.FC = () => {
               <TextField
                 fullWidth
                 label="Phone Number"
+                type="tel"
                 value={formData.phone}
                 onChange={(e) => {
-                  setFormData({ ...formData, phone: e.target.value });
+                  const formatted = formatPhoneNumber(e.target.value);
+                  setFormData({ ...formData, phone: formatted });
                   if (fieldErrors.phone) setFieldErrors({ ...fieldErrors, phone: '' });
                 }}
                 required
                 error={!!fieldErrors.phone}
-                helperText={fieldErrors.phone}
+                helperText={fieldErrors.phone || 'e.g., +31 6 12345678'}
+                inputProps={{ 
+                  inputMode: 'tel',
+                  autoComplete: 'tel',
+                }}
+                placeholder="+31 6 12345678"
               />
             </Grid>
             <Grid item xs={12}>
@@ -562,14 +639,21 @@ const RegistrationForm: React.FC = () => {
               <TextField
                 fullWidth
                 label="Emergency Contact Phone"
+                type="tel"
                 value={formData.emergencyPhone}
                 onChange={(e) => {
-                  setFormData({ ...formData, emergencyPhone: e.target.value });
+                  const formatted = formatPhoneNumber(e.target.value);
+                  setFormData({ ...formData, emergencyPhone: formatted });
                   if (fieldErrors.emergencyPhone) setFieldErrors({ ...fieldErrors, emergencyPhone: '' });
                 }}
                 required
                 error={!!fieldErrors.emergencyPhone}
-                helperText={fieldErrors.emergencyPhone}
+                helperText={fieldErrors.emergencyPhone || 'e.g., +31 6 12345678'}
+                inputProps={{ 
+                  inputMode: 'tel',
+                  autoComplete: 'tel',
+                }}
+                placeholder="+31 6 12345678"
               />
             </Grid>
 
@@ -698,10 +782,87 @@ const RegistrationForm: React.FC = () => {
                   if (fieldErrors.certDate) setFieldErrors({ ...fieldErrors, certDate: '' });
                 }}
                 InputLabelProps={{ shrink: true }}
+                inputProps={{ max: new Date().toISOString().split('T')[0] }}
                 required
                 error={!!fieldErrors.certDate}
                 helperText={fieldErrors.certDate}
               />
+            </Grid>
+            
+            {/* Certificate Upload */}
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Upload Certification Document
+              </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Please upload a scan or photo of your certification. 
+                Accepted formats: PNG, JPG, PDF. Maximum size: 1MB.
+              </Alert>
+              
+              <Box 
+                sx={{ 
+                  border: fieldErrors.certFile ? '2px dashed #d32f2f' : '2px dashed #ccc',
+                  borderRadius: 2,
+                  p: 3,
+                  textAlign: 'center',
+                  bgcolor: certFile ? 'success.light' : 'grey.50',
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'grey.100' },
+                }}
+                onClick={() => document.getElementById('cert-file-input')?.click()}
+              >
+                <input
+                  id="cert-file-input"
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Validate file type
+                      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+                      if (!validTypes.includes(file.type)) {
+                        setFieldErrors({ ...fieldErrors, certFile: 'Only PNG, JPG, and PDF files are allowed' });
+                        return;
+                      }
+                      // Validate file size (1MB = 1048576 bytes)
+                      if (file.size > 1048576) {
+                        setFieldErrors({ ...fieldErrors, certFile: 'File size must be less than 1MB' });
+                        return;
+                      }
+                      setCertFile(file);
+                      if (fieldErrors.certFile) setFieldErrors({ ...fieldErrors, certFile: '' });
+                    }
+                  }}
+                />
+                {certFile ? (
+                  <Box>
+                    <CheckCircle color="success" sx={{ fontSize: 48, mb: 1 }} />
+                    <Typography variant="body1" color="success.dark" fontWeight="bold">
+                      {certFile.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      ({(certFile.size / 1024).toFixed(1)} KB) - Click to change
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Box>
+                    <CloudUpload sx={{ fontSize: 48, color: 'grey.500', mb: 1 }} />
+                    <Typography variant="body1">
+                      Click to upload your certification
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      PNG, JPG, or PDF (max 1MB)
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+              {fieldErrors.certFile && (
+                <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                  {fieldErrors.certFile}
+                </Typography>
+              )}
             </Grid>
           </Grid>
         );
@@ -1015,11 +1176,12 @@ const RegistrationForm: React.FC = () => {
                 <Button
                   variant="contained"
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={loading || certFileUploading}
                   size={isMobile ? 'medium' : 'large'}
                   sx={{ minWidth: { xs: 120, sm: 180 } }}
+                  startIcon={loading || certFileUploading ? <CircularProgress size={20} color="inherit" /> : null}
                 >
-                  {loading ? 'Submitting...' : (isMobile ? 'Submit' : 'Submit Registration')}
+                  {certFileUploading ? 'Uploading...' : loading ? 'Submitting...' : (isMobile ? 'Submit' : 'Submit Registration')}
                 </Button>
               ) : (
                 <Button 
