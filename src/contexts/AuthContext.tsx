@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
@@ -18,6 +19,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<UserCredential>;
   signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   hasRole: (role: UserRole) => boolean;
 }
 
@@ -111,6 +113,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await firebaseSignOut(auth);
   };
 
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+  };
+
   const hasRole = (role: UserRole): boolean => {
     if (!userData) return false;
     if (role === 'admin') return userData.role === 'admin' || userData.role === 'coach' || userData.role === 'super-admin';
@@ -124,6 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signIn,
     signUp,
     signOut,
+    resetPassword,
     hasRole,
   };
 

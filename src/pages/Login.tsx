@@ -11,6 +11,10 @@ import {
   Link,
   useMediaQuery,
   useTheme,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import PageLayout from '../components/PageLayout';
@@ -22,8 +26,12 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, currentUser, userData } = useAuth();
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const { signIn, currentUser, userData, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   // Handle navigation after user data is loaded
@@ -44,6 +52,7 @@ const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
@@ -52,6 +61,31 @@ const Login: React.FC = () => {
     } catch (err: any) {
       setError(err.message || 'Failed to sign in. Please check your credentials.');
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!resetEmail) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    setResetLoading(true);
+    setError('');
+
+    try {
+      await resetPassword(resetEmail);
+      setForgotPasswordOpen(false);
+      setSuccess('Password reset email sent! Check your inbox.');
+      setResetEmail('');
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        setError('No account found with this email address.');
+      } else {
+        setError(err.message || 'Failed to send reset email. Please try again.');
+      }
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -98,8 +132,14 @@ const Login: React.FC = () => {
             </Box>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
               {error}
+            </Alert>
+          )}
+
+          {success && (
+            <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+              {success}
             </Alert>
           )}
 
@@ -135,6 +175,21 @@ const Login: React.FC = () => {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
+
+            <Box textAlign="right">
+              <Link
+                component="button"
+                type="button"
+                variant="body2"
+                onClick={() => {
+                  setResetEmail(email);
+                  setForgotPasswordOpen(true);
+                }}
+                underline="hover"
+              >
+                Forgot password?
+              </Link>
+            </Box>
           </form>
 
           <Box textAlign="center" mt={2}>
@@ -147,6 +202,42 @@ const Login: React.FC = () => {
           </Box>
         </Paper>
       </Container>
+
+      {/* Forgot Password Dialog */}
+      <Dialog 
+        open={forgotPasswordOpen} 
+        onClose={() => setForgotPasswordOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Reset Password</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Enter your email address and we'll send you a link to reset your password.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Email Address"
+            type="email"
+            value={resetEmail}
+            onChange={(e) => setResetEmail(e.target.value)}
+            inputProps={{ inputMode: 'email' }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setForgotPasswordOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleForgotPassword} 
+            variant="contained"
+            disabled={resetLoading}
+          >
+            {resetLoading ? 'Sending...' : 'Send Reset Link'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
     </PageLayout>
   );
