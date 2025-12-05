@@ -55,14 +55,15 @@ service cloud.firestore {
       
       // Members can update their own data (limited fields)
       // Cannot change: photographyConsent, membershipStatus, medicalCertificate, agreedTo* fields, signature
+      // CAN change: balance, trialSessionsUsed (for bookings), profile fields
       allow update: if isSignedIn() && (
         (isOwner(memberId) && 
-         // Only allow updating specific fields
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-           'photographyConsent', 'membershipStatus', 'membershipExpiry', 
-           'medicalCertificate', 'agreedToTerms', 'agreedToLiabilityWaiver',
-           'agreedToHouseRules', 'agreedToPrivacyPolicy', 'signature', 
-           'parentSignature', 'registrationDate', 'uid', 'email'
+         // Only allow updating if NOT touching protected fields
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           'name', 'nickname', 'phone', 'address', 'emergencyContact',
+           'certifications', 'hasInsurance', 'insuranceProofProvided',
+           'isEmergencyResponder', 'emergencyResponderProof', 'photoUrl',
+           'balance', 'trialSessionsUsed', 'isLongTermMember', 'longTermGroups'
          ])) ||
         isAdmin()
       );
@@ -157,8 +158,19 @@ service cloud.firestore {
       // All signed-in users can read settings
       allow read: if isSignedIn();
       
-      // Only admins can create, update, or delete settings
-      allow create, update, delete: if isAdmin();
+      // Admins can do anything, members can update/create clubBalance for payments
+      allow create: if isSignedIn() && (
+        isAdmin() || 
+        settingId == 'clubBalance'
+      );
+      
+      allow update: if isSignedIn() && (
+        isAdmin() || 
+        (settingId == 'clubBalance' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentBalance', 'lastUpdated', 'updatedBy']))
+      );
+      
+      // Only admins can delete settings
+      allow delete: if isAdmin();
     }
     
     // Club transactions collection - tracks club financial transactions
@@ -166,8 +178,15 @@ service cloud.firestore {
       // Only admins can read club transactions
       allow read: if isAdmin();
       
-      // Only admins can create, update, or delete club transactions
-      allow create, update, delete: if isAdmin();
+      // Admins can do anything, members can create payment/refund records for themselves
+      allow create: if isSignedIn() && (
+        isAdmin() || 
+        (request.resource.data.memberId == request.auth.uid && 
+         request.resource.data.type in ['session_payment', 'session_refund'])
+      );
+      
+      // Only admins can update or delete club transactions
+      allow update, delete: if isAdmin();
     }
     
     // Club expenses collection - tracks club expenses/invoices paid

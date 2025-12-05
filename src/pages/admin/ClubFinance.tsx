@@ -105,6 +105,12 @@ const ClubFinance: React.FC = () => {
   const [refundReason, setRefundReason] = useState('');
   const [refundToMemberBalance, setRefundToMemberBalance] = useState(true);
 
+  // Withdraw Balance Dialog (pay out member's balance to their bank)
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawMember, setWithdrawMember] = useState<Member | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawReason, setWithdrawReason] = useState('');
+
   // Add to Member Balance Dialog
   const [addToMemberOpen, setAddToMemberOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -425,6 +431,89 @@ const ClubFinance: React.FC = () => {
     }
   };
 
+  // Handle withdrawing member's balance to their bank account
+  const handleWithdrawBalance = async () => {
+    if (!withdrawMember || !withdrawAmount) {
+      setError('Please select a member and enter an amount');
+      return;
+    }
+
+    const amount = parseFloat(withdrawAmount);
+    if (isNaN(amount) || amount <= 0) {
+      setError('Please enter a valid positive amount');
+      return;
+    }
+
+    const memberBalance = withdrawMember.balance || 0;
+    if (amount > memberBalance) {
+      setError(`Member only has €${memberBalance.toFixed(2)} in their balance`);
+      return;
+    }
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        // ============ ALL READS FIRST ============
+        const memberRef = doc(db, 'members', withdrawMember.uid);
+        const memberDoc = await transaction.get(memberRef);
+        const currentMemberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+
+        if (amount > currentMemberBalance) {
+          throw new Error(`Insufficient balance. Member has €${currentMemberBalance.toFixed(2)}`);
+        }
+
+        const balanceRef = doc(db, 'settings', 'clubBalance');
+        const balanceDoc = await transaction.get(balanceRef);
+        const currentClubBalance = balanceDoc.exists() ? balanceDoc.data().currentBalance || 0 : 0;
+
+        // ============ ALL WRITES AFTER ============
+        // Deduct from member's balance
+        transaction.update(memberRef, {
+          balance: currentMemberBalance - amount,
+        });
+
+        // Deduct from club balance (money leaving the club)
+        transaction.set(balanceRef, {
+          currentBalance: currentClubBalance - amount,
+          lastUpdated: Timestamp.now(),
+          updatedBy: currentUser?.uid,
+        }, { merge: true });
+
+        // Add member transaction record
+        const memberTxnRef = doc(collection(db, 'memberTransactions'));
+        transaction.set(memberTxnRef, {
+          memberId: withdrawMember.uid,
+          type: 'withdrawal',
+          amount: -amount,
+          description: withdrawReason || 'Balance withdrawal to bank account',
+          adminId: currentUser?.uid,
+          adminName: currentUser?.displayName || currentUser?.email,
+          createdAt: Timestamp.now(),
+        });
+
+        // Add club transaction record
+        const clubTxnRef = doc(collection(db, 'clubTransactions'));
+        transaction.set(clubTxnRef, {
+          type: 'refund' as ClubTransactionType,
+          amount: -amount,
+          description: `Balance withdrawal for ${withdrawMember.name}${withdrawReason ? ': ' + withdrawReason : ''}`,
+          memberId: withdrawMember.uid,
+          memberName: withdrawMember.name,
+          createdBy: currentUser?.uid,
+          createdByName: currentUser?.displayName || currentUser?.email,
+          createdAt: Timestamp.now(),
+        });
+      });
+
+      setSuccess(`€${amount.toFixed(2)} withdrawn from ${withdrawMember.name}'s balance. Please transfer to their bank account.`);
+      setWithdrawOpen(false);
+      setWithdrawMember(null);
+      setWithdrawAmount('');
+      setWithdrawReason('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to process withdrawal');
+    }
+  };
+
   const getTransactionTypeLabel = (type: ClubTransactionType) => {
     switch (type) {
       case 'session_payment': return 'Session Payment';
@@ -571,6 +660,16 @@ const ClubFinance: React.FC = () => {
               onClick={() => setAddToMemberOpen(true)}
             >
               Add to Member Balance
+            </Button>
+          </Grid>
+          <Grid item>
+            <Button
+              variant="outlined"
+              color="warning"
+              startIcon={<Payment />}
+              onClick={() => setWithdrawOpen(true)}
+            >
+              Withdraw Member Balance
             </Button>
           </Grid>
         </Grid>
@@ -901,6 +1000,68 @@ const ClubFinance: React.FC = () => {
             color={memberAddType === 'deposit' ? 'success' : 'info'}
           >
             {memberAddType === 'deposit' ? 'Add Deposit' : 'Add Bonus'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Withdraw Member Balance Dialog */}
+      <Dialog open={withdrawOpen} onClose={() => setWithdrawOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Withdraw Member Balance to Bank</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Use this to pay out a member's balance to their bank account. This will deduct from both the member's balance and the club balance.
+          </Alert>
+          <Autocomplete
+            options={members.filter(m => (m.balance || 0) > 0)}
+            getOptionLabel={(option) => `${option.name} (Balance: €${(option.balance || 0).toFixed(2)})`}
+            value={withdrawMember}
+            onChange={(_, newValue) => {
+              setWithdrawMember(newValue);
+              if (newValue) {
+                setWithdrawAmount((newValue.balance || 0).toString());
+              }
+            }}
+            renderInput={(params) => (
+              <TextField {...params} label="Select Member" margin="dense" fullWidth />
+            )}
+          />
+          {withdrawMember && (
+            <Alert severity="warning" sx={{ mt: 1, mb: 1 }}>
+              Available balance: €{(withdrawMember.balance || 0).toFixed(2)}
+            </Alert>
+          )}
+          <TextField
+            margin="dense"
+            label="Amount to Withdraw (€)"
+            type="number"
+            fullWidth
+            value={withdrawAmount}
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            InputProps={{
+              startAdornment: <InputAdornment position="start">€</InputAdornment>,
+            }}
+            helperText={withdrawMember ? `Max: €${(withdrawMember.balance || 0).toFixed(2)}` : ''}
+          />
+          <TextField
+            margin="dense"
+            label="Reason (optional)"
+            fullWidth
+            multiline
+            rows={2}
+            value={withdrawReason}
+            onChange={(e) => setWithdrawReason(e.target.value)}
+            placeholder="e.g., Member requested withdrawal, Refund to bank"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWithdrawOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={handleWithdrawBalance} 
+            variant="contained" 
+            color="warning"
+            disabled={!withdrawMember || !withdrawAmount || parseFloat(withdrawAmount) <= 0}
+          >
+            Process Withdrawal
           </Button>
         </DialogActions>
       </Dialog>

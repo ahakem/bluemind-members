@@ -573,8 +573,20 @@ const SessionBooking: React.FC = () => {
       // If paid from balance and within deadline, refund to balance
       if (canGetRefund) {
         const memberRef = doc(db, 'members', currentUser.uid);
+        const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+        
+        // Update member balance (add refund)
         await updateDoc(memberRef, {
           balance: (memberData.balance || 0) + (booking.amountPaid || 0),
+        });
+        
+        // Deduct from club balance
+        const clubBalanceDoc = await getDoc(clubBalanceRef);
+        const currentClubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+        await updateDoc(clubBalanceRef, {
+          currentBalance: currentClubBalance - (booking.amountPaid || 0),
+          lastUpdated: Timestamp.now(),
+          updatedBy: 'system',
         });
         
         // Create a balance transaction record for the refund
@@ -586,6 +598,18 @@ const SessionBooking: React.FC = () => {
           description: `Refund for cancelled session on ${format(sessionDateTime, 'MMM d, yyyy')}`,
           createdBy: currentUser.uid,
           createdByName: userData.name,
+          createdAt: Timestamp.now(),
+        });
+        
+        // Create club transaction record for the refund
+        await addDoc(collection(db, 'clubTransactions'), {
+          type: 'session_refund',
+          amount: -(booking.amountPaid || 0),
+          description: `Session refund to ${userData.name}`,
+          memberId: currentUser.uid,
+          memberName: userData.name,
+          createdBy: 'system',
+          createdByName: 'System',
           createdAt: Timestamp.now(),
         });
       }
