@@ -192,5 +192,19 @@ service cloud.firestore {
       // Only admins can update or delete member transactions
       allow update, delete: if isAdmin();
     }
+
+    // Balance transactions collection - tracks balance changes (deposits, payments, refunds)
+    match /balanceTransactions/{transactionId} {
+      // Members can read their own transactions, admins can read all
+      allow read: if isSignedIn() && 
+        (resource.data.memberId == request.auth.uid || isAdmin());
+      
+      // Members can create their own refund transactions, admins can create any
+      allow create: if isSignedIn() && 
+        (request.resource.data.memberId == request.auth.uid || isAdmin());
+      
+      // Only admins can update or delete balance transactions
+      allow update, delete: if isAdmin();
+    }
   }
 }

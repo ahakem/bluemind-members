@@ -73,6 +73,8 @@ const PaymentVerification: React.FC = () => {
 
     try {
       const isTopUp = (selectedInvoice as any).isTopUp;
+      const invoiceType = (selectedInvoice as any).type;
+      const isMembershipInvoice = invoiceType === 'membership';
 
       await runTransaction(db, async (transaction) => {
         // ============ ALL READS FIRST ============
@@ -117,6 +119,14 @@ const PaymentVerification: React.FC = () => {
           });
         }
 
+        // If this is a membership invoice, activate the member
+        if (isMembershipInvoice) {
+          transaction.update(memberRef, {
+            membershipStatus: 'active',
+            updatedAt: Timestamp.now(),
+          });
+        }
+
         // Add to club balance
         transaction.set(clubBalanceRef, {
           currentBalance: clubBalance + selectedInvoice.amount,
@@ -127,11 +137,13 @@ const PaymentVerification: React.FC = () => {
         // Add club transaction record
         const clubTxnRef = doc(collection(db, 'clubTransactions'));
         transaction.set(clubTxnRef, {
-          type: isTopUp ? 'member_topup' : 'session_payment',
+          type: isMembershipInvoice ? 'manual_add' : (isTopUp ? 'member_topup' : 'session_payment'),
           amount: selectedInvoice.amount,
-          description: isTopUp 
-            ? `Top-up from ${selectedInvoice.memberName}` 
-            : `Session payment from ${selectedInvoice.memberName}`,
+          description: isMembershipInvoice 
+            ? `Membership fee from ${selectedInvoice.memberName}`
+            : (isTopUp 
+              ? `Top-up from ${selectedInvoice.memberName}` 
+              : `Session payment from ${selectedInvoice.memberName}`),
           memberId: selectedInvoice.memberId,
           memberName: selectedInvoice.memberName,
           invoiceId: selectedInvoice.id,

@@ -25,6 +25,10 @@ import {
   Tab,
   Tooltip,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  OutlinedInput,
 } from '@mui/material';
 import { Add, Delete, Edit, People, Event } from '@mui/icons-material';
 import {
@@ -43,6 +47,18 @@ import {
 import { db } from '../../config/firebase';
 import { Session, PoolLocation } from '../../types';
 import { format, addWeeks, isBefore, startOfDay } from 'date-fns';
+
+// Predefined long-term member groups - exported for use in other components
+export const LONG_TERM_GROUPS = [
+  { value: 'monday', label: 'Monday Group' },
+  { value: 'tuesday', label: 'Tuesday Group' },
+  { value: 'wednesday', label: 'Wednesday Group' },
+  { value: 'thursday', label: 'Thursday Group' },
+  { value: 'friday', label: 'Friday Group' },
+  { value: 'saturday', label: 'Saturday Group' },
+  { value: 'sunday', label: 'Sunday Group' },
+  { value: 'unlimited', label: 'Unlimited (All Sessions)' },
+];
 
 const SessionManagement: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -66,6 +82,7 @@ const SessionManagement: React.FC = () => {
     priceMember: 7,
     repeatWeekly: false,
     repeatEndDate: '',
+    allowedLongTermGroups: [] as string[],
   });
 
   useEffect(() => {
@@ -119,6 +136,7 @@ const SessionManagement: React.FC = () => {
         priceMember: session.priceMember,
         repeatWeekly: session.repeatWeekly || false,
         repeatEndDate: session.repeatEndDate ? format(session.repeatEndDate, 'yyyy-MM-dd') : '',
+        allowedLongTermGroups: session.allowedLongTermGroups || [],
       });
     } else {
       setSelectedSession(null);
@@ -134,6 +152,7 @@ const SessionManagement: React.FC = () => {
         priceMember: defaultPriceMember,
         repeatWeekly: false,
         repeatEndDate: '',
+        allowedLongTermGroups: [],
       });
     }
     setOpenDialog(true);
@@ -169,6 +188,7 @@ const SessionManagement: React.FC = () => {
         priceBoard: formData.priceBoard,
         priceMember: formData.priceMember,
         repeatWeekly: formData.repeatWeekly,
+        allowedLongTermGroups: formData.allowedLongTermGroups,
         createdBy: 'admin',
       };
 
@@ -468,6 +488,47 @@ const SessionManagement: React.FC = () => {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               />
+            </Grid>
+
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Long-Term Groups (Free Access)</InputLabel>
+                <Select
+                  multiple
+                  value={formData.allowedLongTermGroups}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    allowedLongTermGroups: typeof e.target.value === 'string' 
+                      ? e.target.value.split(',') 
+                      : e.target.value 
+                  })}
+                  input={<OutlinedInput label="Long-Term Groups (Free Access)" />}
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((value) => (
+                        <Chip 
+                          key={value} 
+                          label={LONG_TERM_GROUPS.find(g => g.value === value)?.label || value}
+                          size="small"
+                          color="success"
+                        />
+                      ))}
+                    </Box>
+                  )}
+                >
+                  {LONG_TERM_GROUPS.map((group) => (
+                    <MenuItem key={group.value} value={group.value}>
+                      <Checkbox checked={formData.allowedLongTermGroups.includes(group.value)} />
+                      {group.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {formData.allowedLongTermGroups.length > 0 && (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  Members in these long-term groups can book this session for free.
+                </Alert>
+              )}
             </Grid>
             
             {!selectedSession && (

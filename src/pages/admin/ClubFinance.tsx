@@ -110,6 +110,7 @@ const ClubFinance: React.FC = () => {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberAddAmount, setMemberAddAmount] = useState('');
   const [memberAddReason, setMemberAddReason] = useState('');
+  const [memberAddType, setMemberAddType] = useState<'deposit' | 'bonus'>('deposit');
 
   useEffect(() => {
     // Fetch club balance
@@ -361,32 +362,64 @@ const ClubFinance: React.FC = () => {
         // ============ ALL READS FIRST ============
         const memberRef = doc(db, 'members', selectedMember.uid);
         const memberDoc = await transaction.get(memberRef);
-        const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+        const currentMemberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+
+        // Only read club balance if it's a deposit (money from member)
+        let currentClubBalance = 0;
+        const balanceRef = doc(db, 'settings', 'clubBalance');
+        if (memberAddType === 'deposit') {
+          const balanceDoc = await transaction.get(balanceRef);
+          currentClubBalance = balanceDoc.exists() ? balanceDoc.data().currentBalance || 0 : 0;
+        }
 
         // ============ ALL WRITES AFTER ============
         // Update member's balance
         transaction.update(memberRef, {
-          balance: currentBalance + amount,
+          balance: currentMemberBalance + amount,
         });
 
-        // Add member transaction record
+        // Add member transaction record with the correct type
         const memberTxnRef = doc(collection(db, 'memberTransactions'));
         transaction.set(memberTxnRef, {
           memberId: selectedMember.uid,
-          type: 'admin_adjustment',
+          type: memberAddType, // 'deposit' or 'bonus'
           amount: amount,
           description: memberAddReason,
           adminId: currentUser?.uid,
           adminName: currentUser?.displayName || currentUser?.email,
           createdAt: Timestamp.now(),
         });
+
+        // If deposit, also add to club balance (member paid money)
+        if (memberAddType === 'deposit') {
+          transaction.set(balanceRef, {
+            currentBalance: currentClubBalance + amount,
+            lastUpdated: Timestamp.now(),
+            updatedBy: currentUser?.uid,
+          }, { merge: true });
+
+          // Add club transaction record
+          const clubTxnRef = doc(collection(db, 'clubTransactions'));
+          transaction.set(clubTxnRef, {
+            type: 'member_topup' as ClubTransactionType,
+            amount: amount,
+            description: `Deposit from ${selectedMember.name}: ${memberAddReason}`,
+            memberId: selectedMember.uid,
+            memberName: selectedMember.name,
+            createdBy: currentUser?.uid,
+            createdByName: currentUser?.displayName || currentUser?.email,
+            createdAt: Timestamp.now(),
+          });
+        }
       });
 
-      setSuccess(`€${amount.toFixed(2)} added to ${selectedMember.name}'s balance`);
+      const typeLabel = memberAddType === 'deposit' ? 'Deposit' : 'Bonus';
+      setSuccess(`${typeLabel} of €${amount.toFixed(2)} added to ${selectedMember.name}'s balance`);
       setAddToMemberOpen(false);
       setSelectedMember(null);
       setMemberAddAmount('');
       setMemberAddReason('');
+      setMemberAddType('deposit');
     } catch (err: any) {
       setError(err.message || 'Failed to add to member balance');
     }
@@ -811,6 +844,31 @@ const ClubFinance: React.FC = () => {
               Current balance: €{(selectedMember.balance || 0).toFixed(2)}
             </Alert>
           )}
+          <FormControl fullWidth sx={{ mt: 2 }}>
+            <InputLabel>Type</InputLabel>
+            <Select
+              value={memberAddType}
+              onChange={(e) => setMemberAddType(e.target.value as 'deposit' | 'bonus')}
+              label="Type"
+            >
+              <MenuItem value="deposit">
+                Deposit (member paid - adds to club balance)
+              </MenuItem>
+              <MenuItem value="bonus">
+                Bonus (free credit - no effect on club balance)
+              </MenuItem>
+            </Select>
+          </FormControl>
+          {memberAddType === 'deposit' && (
+            <Alert severity="success" sx={{ mt: 1 }}>
+              This deposit will also be added to the club balance as income.
+            </Alert>
+          )}
+          {memberAddType === 'bonus' && (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              Bonus credit is free for the member - it will NOT affect club balance.
+            </Alert>
+          )}
           <TextField
             margin="dense"
             label="Amount to Add (€)"
@@ -830,13 +888,19 @@ const ClubFinance: React.FC = () => {
             rows={2}
             value={memberAddReason}
             onChange={(e) => setMemberAddReason(e.target.value)}
-            placeholder="e.g., Prepaid credit purchase, Compensation"
+            placeholder={memberAddType === 'deposit' 
+              ? "e.g., Cash deposit, Bank transfer received" 
+              : "e.g., Welcome bonus, Compensation, Loyalty reward"}
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAddToMemberOpen(false)}>Cancel</Button>
-          <Button onClick={handleAddToMemberBalance} variant="contained" color="info">
-            Add to Balance
+          <Button 
+            onClick={handleAddToMemberBalance} 
+            variant="contained" 
+            color={memberAddType === 'deposit' ? 'success' : 'info'}
+          >
+            {memberAddType === 'deposit' ? 'Add Deposit' : 'Add Bonus'}
           </Button>
         </DialogActions>
       </Dialog>

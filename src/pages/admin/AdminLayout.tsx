@@ -26,6 +26,7 @@ import {
   Receipt,
   LocationOn,
   AccountBalance,
+  Settings,
 } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -86,6 +87,7 @@ const AdminLayout: React.FC = () => {
     { text: 'Attendance', icon: <CheckCircle />, path: '/admin/attendance' },
     { text: 'Payments', icon: <Payment />, path: '/admin/payments' },
     { text: 'Club Finance', icon: <AccountBalance />, path: '/admin/finance' },
+    { text: 'Trial Settings', icon: <Settings />, path: '/admin/trial-settings' },
     { text: 'Content', icon: <Article />, path: '/admin/content' },
   ];
 

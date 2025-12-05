@@ -27,6 +27,7 @@ import PaymentVerification from './pages/admin/PaymentVerification';
 import ContentManagement from './pages/admin/ContentManagement';
 import LocationManagement from './pages/admin/LocationManagement';
 import ClubFinance from './pages/admin/ClubFinance';
+import TrialSettings from './pages/admin/TrialSettings';
 
 // Member pages
 import MemberLayout from './pages/member/MemberLayout';
@@ -77,6 +78,7 @@ function App() {
               <Route path="attendance" element={<AttendanceTracking />} />
               <Route path="payments" element={<PaymentVerification />} />
               <Route path="finance" element={<ClubFinance />} />
+              <Route path="trial-settings" element={<TrialSettings />} />
               <Route path="content" element={<ContentManagement />} />
             </Route>
 

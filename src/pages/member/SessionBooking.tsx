@@ -19,8 +19,9 @@ import {
   Avatar,
   AvatarGroup,
   Tooltip,
+  Paper,
 } from '@mui/material';
-import { Event, People, LocationOn, Euro, Payment } from '@mui/icons-material';
+import { Event, People, LocationOn, Euro, Payment, CardMembership, Warning } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   collection,
@@ -38,7 +39,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Session, Invoice, Member } from '../../types';
+import { Session, Invoice, Member, TrialSettings } from '../../types';
 import { format, startOfDay } from 'date-fns';
 
 interface BookingInfo {
@@ -47,6 +48,7 @@ interface BookingInfo {
   invoiceId?: string;
   invoiceStatus?: string;
   paymentMethod?: string;
+  amountPaid?: number;
 }
 
 interface SessionAttendee {
@@ -65,6 +67,8 @@ const SessionBooking: React.FC = () => {
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
   const [sessionAttendees, setSessionAttendees] = useState<Record<string, SessionAttendee[]>>({});
   const [memberData, setMemberData] = useState<Member | null>(null);
+  const [trialSettings, setTrialSettings] = useState<TrialSettings | null>(null);
+  const [membershipDialogOpen, setMembershipDialogOpen] = useState(false);
   const [, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -81,8 +85,28 @@ const SessionBooking: React.FC = () => {
     if (currentUser) {
       fetchSessions();
       fetchMemberData();
+      fetchTrialSettings();
     }
   }, [currentUser]);
+
+  const fetchTrialSettings = async () => {
+    try {
+      const settingsDoc = await getDoc(doc(db, 'settings', 'trialSettings'));
+      if (settingsDoc.exists()) {
+        setTrialSettings(settingsDoc.data() as TrialSettings);
+      } else {
+        // Default settings
+        setTrialSettings({
+          maxTrialSessions: 3,
+          trialSessionPrice: 10,
+          membershipFee: 25,
+          cancellationDeadlineHours: 24,
+        });
+      }
+    } catch (e) {
+      console.error('Error fetching trial settings:', e);
+    }
+  };
 
   const fetchMemberData = async () => {
     if (!currentUser) return;
@@ -179,6 +203,7 @@ const SessionBooking: React.FC = () => {
               invoiceId: data.invoiceId,
               invoiceStatus,
               paymentMethod: data.paymentMethod || 'invoice',
+              amountPaid: data.amountPaid || 0,
             };
           })
       );
@@ -198,9 +223,61 @@ const SessionBooking: React.FC = () => {
     return `BM-${year}-${random}`;
   };
 
+  // Check if user is a non-member (approved but not active member)
+  const isNonMember = (): boolean => {
+    return memberData?.membershipStatus !== 'active';
+  };
+
+  // Check how many trial sessions the user has used
+  const getTrialSessionsUsed = (): number => {
+    return memberData?.trialSessionsUsed || 0;
+  };
+
+  // Check if user can still do trial sessions
+  const canDoTrialSession = (): boolean => {
+    if (!isNonMember()) return false; // Active members don't need trials
+    if (!trialSettings) return false;
+    return getTrialSessionsUsed() < trialSettings.maxTrialSessions;
+  };
+
+  // Get remaining trial sessions
+  const getRemainingTrialSessions = (): number => {
+    if (!trialSettings) return 0;
+    return Math.max(0, trialSettings.maxTrialSessions - getTrialSessionsUsed());
+  };
+
+  // Check if member qualifies for free session based on long-term groups
+  const memberQualifiesForFreeSession = (session: Session): boolean => {
+    // Must be a long-term member
+    if (!memberData?.isLongTermMember) {
+      return false;
+    }
+    
+    const memberGroups = memberData.longTermGroups || [];
+    const sessionAllowedGroups = session.allowedLongTermGroups || [];
+    
+    // If member has 'unlimited' group, they can join any session
+    if (memberGroups.includes('unlimited')) {
+      return true;
+    }
+    
+    // If session has no group restrictions, long-term members with isLongTermMember flag get in free
+    // (backward compatibility for sessions without allowedLongTermGroups)
+    if (sessionAllowedGroups.length === 0) {
+      return true;
+    }
+    
+    // Check if member has any group that matches the session's allowed groups
+    return memberGroups.some(group => sessionAllowedGroups.includes(group));
+  };
+
   const getPrice = (session: Session) => {
-    // Long-term members get free sessions
-    if (memberData?.isLongTermMember) {
+    // Non-members pay trial price
+    if (isNonMember()) {
+      return trialSettings?.trialSessionPrice || 10;
+    }
+    // Long-term members who qualify for this session get free access
+    if (memberQualifiesForFreeSession(session)) {
       return 0;
     }
     // Check if user is board member (separate flag, not a role)
@@ -208,20 +285,25 @@ const SessionBooking: React.FC = () => {
     return isBoardMember ? (session.priceBoard || 0) : (session.priceMember || 0);
   };
 
-  const getPaymentMethod = (session: Session): 'long_term' | 'balance' | 'invoice' | 'free' => {
+  const getPaymentMethod = (session: Session): 'long_term' | 'balance' | 'invoice' | 'free' | 'trial' => {
     const price = getPrice(session);
     
-    // Free session
-    if (price === 0) {
-      return memberData?.isLongTermMember ? 'long_term' : 'free';
+    // Free session (only for active members with long-term status)
+    if (price === 0 && !isNonMember()) {
+      return memberQualifiesForFreeSession(session) ? 'long_term' : 'free';
     }
     
-    // Has enough balance - pay from balance
+    // Has enough balance - pay from balance (works for both members and non-members)
     if (memberData?.balance && memberData.balance >= price) {
       return 'balance';
     }
     
-    // Otherwise, create invoice
+    // Non-members without enough balance get trial invoice
+    if (isNonMember()) {
+      return 'trial';
+    }
+    
+    // Active members without enough balance get regular invoice
     return 'invoice';
   };
 
@@ -241,6 +323,14 @@ const SessionBooking: React.FC = () => {
     try {
       setError('');
       setSuccess('');
+
+      // Check if non-member has exceeded trial sessions
+      if (isNonMember() && !canDoTrialSession()) {
+        setError(`You have used all ${trialSettings?.maxTrialSessions || 3} trial sessions. Please complete your membership to continue booking.`);
+        handleCloseConfirmDialog();
+        setMembershipDialogOpen(true);
+        return;
+      }
 
       // Check if already booked (prevent duplicates) - local state check
       const existingBooking = myBookings.find(b => b.sessionId === session.id);
@@ -303,9 +393,17 @@ const SessionBooking: React.FC = () => {
         // Handle payment based on method
         if (paymentMethod === 'balance') {
           // Deduct from member balance
-          transaction.update(memberRef, {
-            balance: currentMemberBalance - price,
-          });
+          // If non-member, also increment trial sessions used
+          if (isNonMember()) {
+            transaction.update(memberRef, {
+              balance: currentMemberBalance - price,
+              trialSessionsUsed: (memberData?.trialSessionsUsed || 0) + 1,
+            });
+          } else {
+            transaction.update(memberRef, {
+              balance: currentMemberBalance - price,
+            });
+          }
 
           // Add member transaction record
           const memberTxnRef = doc(collection(db, 'memberTransactions'));
@@ -313,7 +411,7 @@ const SessionBooking: React.FC = () => {
             memberId: currentUser.uid,
             type: 'session_payment',
             amount: -price,
-            description: `Session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
+            description: `${isNonMember() ? 'Trial session' : 'Session'} on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
             sessionId: session.id,
             createdAt: Timestamp.now(),
           });
@@ -350,6 +448,7 @@ const SessionBooking: React.FC = () => {
             memberEmail: userData.email,
             amount: price,
             currency: 'EUR',
+            type: 'session',
             status: 'pending',
             uniquePaymentReference: generatePaymentReference(),
             description: `Training session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
@@ -358,6 +457,32 @@ const SessionBooking: React.FC = () => {
             dueDate: Timestamp.fromDate(session.date),
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
+          });
+        } else if (paymentMethod === 'trial') {
+          // Create trial session invoice
+          const invoiceRef = doc(collection(db, 'invoices'));
+          invoiceId = invoiceRef.id;
+          
+          transaction.set(invoiceRef, {
+            memberId: currentUser.uid,
+            memberName: userData.name,
+            memberEmail: userData.email,
+            amount: price,
+            currency: 'EUR',
+            type: 'trial_session',
+            status: 'pending',
+            uniquePaymentReference: generatePaymentReference(),
+            description: `Trial session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
+            sessionId: session.id,
+            sessionDate: Timestamp.fromDate(session.date),
+            dueDate: Timestamp.fromDate(session.date),
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          });
+
+          // Increment trial sessions used
+          transaction.update(memberRef, {
+            trialSessionsUsed: (memberData?.trialSessionsUsed || 0) + 1,
           });
         }
         // For 'long_term' or 'free', no payment needed
@@ -385,11 +510,19 @@ const SessionBooking: React.FC = () => {
 
       // Show success message based on payment method
       if (paymentMethod === 'balance') {
-        setSuccess(`Session booked! €${price.toFixed(2)} deducted from your balance.`);
+        if (isNonMember()) {
+          const remaining = getRemainingTrialSessions() - 1;
+          setSuccess(`Trial session booked! €${price.toFixed(2)} deducted from your balance. You have ${remaining} trial session(s) remaining.`);
+        } else {
+          setSuccess(`Session booked! €${price.toFixed(2)} deducted from your balance.`);
+        }
       } else if (paymentMethod === 'long_term') {
         setSuccess('Session booked! (Long-term member - no payment required)');
       } else if (paymentMethod === 'free') {
         setSuccess('Session booked! (Free session)');
+      } else if (paymentMethod === 'trial') {
+        const remaining = getRemainingTrialSessions() - 1;
+        setSuccess(`Trial session booked! €${price.toFixed(2)} - Please complete payment. You have ${remaining} trial session(s) remaining.`);
       } else {
         setSuccess('Session booked! Please complete payment.');
       }
@@ -404,17 +537,69 @@ const SessionBooking: React.FC = () => {
   };
 
   const handleCancelBooking = async (sessionId: string) => {
-    if (!currentUser) return;
+    if (!currentUser || !userData || !memberData) return;
 
-    if (!window.confirm('Are you sure you want to cancel this booking? The invoice will also be cancelled.')) {
+    const booking = myBookings.find(b => b.sessionId === sessionId);
+    if (!booking) return;
+
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    // Check if eligible for refund based on cancellation deadline
+    const sessionDateTime = session.date instanceof Date ? session.date : new Date(session.date);
+    const now = new Date();
+    const hoursUntilSession = (sessionDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    const deadlineHours = trialSettings?.cancellationDeadlineHours || 24;
+    const isWithinRefundDeadline = hoursUntilSession >= deadlineHours;
+    const canGetRefund = isWithinRefundDeadline && booking.paymentMethod === 'balance' && (booking.amountPaid || 0) > 0;
+
+    let confirmMessage = 'Are you sure you want to cancel this booking?';
+    
+    if (canGetRefund) {
+      confirmMessage = `Cancel this booking? You will receive a refund of €${(booking.amountPaid || 0).toFixed(2)} to your balance.`;
+    } else if (booking.paymentMethod === 'balance' && (booking.amountPaid || 0) > 0 && !isWithinRefundDeadline) {
+      confirmMessage = `Warning: You are cancelling less than ${deadlineHours} hours before the session. You will NOT receive a refund. Are you sure?`;
+    } else if (booking.invoiceId) {
+      confirmMessage = 'Are you sure you want to cancel this booking? The invoice will also be cancelled.';
+    }
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
     try {
       setError('');
-      
-      const booking = myBookings.find(b => b.sessionId === sessionId);
-      if (!booking) return;
+
+      // If paid from balance and within deadline, refund to balance
+      if (canGetRefund) {
+        const memberRef = doc(db, 'members', currentUser.uid);
+        await updateDoc(memberRef, {
+          balance: (memberData.balance || 0) + (booking.amountPaid || 0),
+        });
+        
+        // Create a balance transaction record for the refund
+        await addDoc(collection(db, 'balanceTransactions'), {
+          memberId: currentUser.uid,
+          memberName: userData.name,
+          amount: booking.amountPaid || 0,
+          type: 'refund',
+          description: `Refund for cancelled session on ${format(sessionDateTime, 'MMM d, yyyy')}`,
+          createdBy: currentUser.uid,
+          createdByName: userData.name,
+          createdAt: Timestamp.now(),
+        });
+      }
+
+      // If it was a trial session, decrement the trial count to allow re-booking
+      if (booking.paymentMethod === 'trial' || (isNonMember() && booking.paymentMethod === 'balance')) {
+        const memberRef = doc(db, 'members', currentUser.uid);
+        const currentTrials = memberData.trialSessionsUsed || 0;
+        if (currentTrials > 0) {
+          await updateDoc(memberRef, {
+            trialSessionsUsed: currentTrials - 1,
+          });
+        }
+      }
 
       // Delete attendance record
       await deleteDoc(doc(db, 'attendance', booking.attendanceId));
@@ -432,10 +617,51 @@ const SessionBooking: React.FC = () => {
         currentAttendance: increment(-1),
       });
 
+      if (canGetRefund) {
+        setSuccess(`Booking cancelled. €${(booking.amountPaid || 0).toFixed(2)} has been refunded to your balance.`);
+      } else {
+        setSuccess('Booking cancelled successfully.');
+      }
+
       await fetchSessions();
+      await fetchMemberData(); // Refresh balance
     } catch (error: any) {
       console.error('Error cancelling booking:', error);
       setError(error.message || 'Failed to cancel booking. Please try again.');
+    }
+  };
+
+  const handleCompleteMembership = async () => {
+    if (!currentUser || !userData || !trialSettings) return;
+
+    try {
+      setError('');
+      
+      // Create membership invoice
+      await addDoc(collection(db, 'invoices'), {
+        memberId: currentUser.uid,
+        memberName: userData.name,
+        memberEmail: userData.email,
+        amount: trialSettings.membershipFee,
+        currency: 'EUR',
+        type: 'membership',
+        status: 'pending',
+        uniquePaymentReference: generatePaymentReference(),
+        description: 'Blue Mind Freediving - Yearly Membership Fee',
+        dueDate: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+
+      setSuccess(`Membership invoice created for €${trialSettings.membershipFee.toFixed(2)}. Please complete payment to activate your membership.`);
+      setMembershipDialogOpen(false);
+      
+      // Navigate to payments page
+      const paymentsPath = isAdminContext ? '/admin/my-payments' : '/member/payments';
+      navigate(paymentsPath);
+    } catch (error: any) {
+      console.error('Error creating membership invoice:', error);
+      setError(error.message || 'Failed to create membership invoice. Please try again.');
     }
   };
 
@@ -456,6 +682,16 @@ const SessionBooking: React.FC = () => {
     }
     if (booking.paymentMethod === 'free') {
       return { label: 'Free Session', color: 'success' };
+    }
+    if (booking.paymentMethod === 'trial') {
+      switch (booking.invoiceStatus) {
+        case 'paid':
+          return { label: 'Trial - Paid', color: 'success' };
+        case 'transfer_initiated':
+          return { label: 'Trial - Awaiting Confirmation', color: 'info' };
+        default:
+          return { label: 'Trial - Pending Payment', color: 'warning' };
+      }
     }
     
     // For invoice payments
@@ -608,6 +844,45 @@ const SessionBooking: React.FC = () => {
         </Alert>
       )}
 
+      {/* Non-member Trial Status Banner */}
+      {isNonMember() && trialSettings && (
+        <Paper 
+          sx={{ 
+            p: 2, 
+            mb: 2, 
+            bgcolor: canDoTrialSession() ? 'info.light' : 'warning.light',
+            color: canDoTrialSession() ? 'info.contrastText' : 'warning.contrastText',
+          }}
+        >
+          <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
+            <Box display="flex" alignItems="center" gap={1}>
+              <Warning />
+              <Box>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {canDoTrialSession() 
+                    ? `Trial Member - ${getRemainingTrialSessions()} trial session(s) remaining`
+                    : 'All trial sessions used'}
+                </Typography>
+                <Typography variant="body2">
+                  {canDoTrialSession()
+                    ? `Trial price: €${trialSettings.trialSessionPrice.toFixed(2)} per session. Become a member for cheaper sessions!`
+                    : 'Complete your membership to continue booking sessions at member prices'}
+                </Typography>
+              </Box>
+            </Box>
+            <Button
+              variant="contained"
+              color={canDoTrialSession() ? 'primary' : 'warning'}
+              startIcon={<CardMembership />}
+              onClick={() => setMembershipDialogOpen(true)}
+              size={isMobile ? 'small' : 'medium'}
+            >
+              {isMobile ? 'Join Now' : 'Complete Membership'}
+            </Button>
+          </Box>
+        </Paper>
+      )}
+
       {/* Member Balance Card */}
       {memberData && (memberData.balance || memberData.isLongTermMember) && (
         <Alert 
@@ -719,10 +994,29 @@ const SessionBooking: React.FC = () => {
                     </Alert>
                   );
                 } else if (paymentMethod === 'balance') {
+                  if (isNonMember()) {
+                    return (
+                      <Alert severity="info">
+                        <strong>Trial Session (from balance)</strong><br/>
+                        €{getPrice(confirmDialog.session).toFixed(2)} will be deducted from your balance
+                        (Current: €{memberData?.balance?.toFixed(2)}).<br/>
+                        Remaining trials after this: {getRemainingTrialSessions() - 1}
+                      </Alert>
+                    );
+                  }
                   return (
                     <Alert severity="info">
                       €{getPrice(confirmDialog.session).toFixed(2)} will be deducted from your balance
                       (Current: €{memberData?.balance?.toFixed(2)}).
+                    </Alert>
+                  );
+                } else if (paymentMethod === 'trial') {
+                  return (
+                    <Alert severity="warning">
+                      <strong>Trial Session</strong><br/>
+                      Price: €{getPrice(confirmDialog.session).toFixed(2)}<br/>
+                      Remaining trials after this: {getRemainingTrialSessions() - 1}<br/>
+                      An invoice will be created. Become a member for cheaper session prices!
                     </Alert>
                   );
                 } else {
@@ -741,6 +1035,62 @@ const SessionBooking: React.FC = () => {
           <Button onClick={handleCloseConfirmDialog}>Cancel</Button>
           <Button onClick={handleBooking} variant="contained">
             Confirm Booking
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Membership Completion Dialog */}
+      <Dialog 
+        open={membershipDialogOpen} 
+        onClose={() => setMembershipDialogOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CardMembership color="primary" />
+          Complete Your Membership
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Become a full member to enjoy:
+              <ul style={{ marginBottom: 0, paddingLeft: '20px' }}>
+                <li>Access to all training sessions</li>
+                <li><strong>Cheaper sessions!</strong> Member price: €{(sessions[0]?.priceMember || 7).toFixed(2)} vs trial price: €{trialSettings?.trialSessionPrice.toFixed(2)}</li>
+                <li>No trial session limits</li>
+                <li>Full club benefits for one year</li>
+              </ul>
+            </Alert>
+
+            <Paper sx={{ p: 2, bgcolor: 'background.default', textAlign: 'center' }}>
+              <Typography variant="h6" color="text.secondary">
+                Yearly Membership Fee
+              </Typography>
+              <Typography variant="h3" color="primary" fontWeight="bold">
+                €{trialSettings?.membershipFee.toFixed(2) || '25.00'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                per year
+              </Typography>
+            </Paper>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              After payment confirmation by an admin, your membership will be activated for one year
+              and you can book sessions at the cheaper member prices.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMembershipDialogOpen(false)}>
+            Maybe Later
+          </Button>
+          <Button 
+            onClick={handleCompleteMembership} 
+            variant="contained" 
+            color="primary"
+            startIcon={<CardMembership />}
+          >
+            Create Membership Invoice
           </Button>
         </DialogActions>
       </Dialog>

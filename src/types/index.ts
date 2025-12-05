@@ -55,6 +55,9 @@ export interface Member {
   // Financial
   balance?: number;          // Prepaid credit balance
   isLongTermMember?: boolean; // Long-term members get free sessions
+  longTermGroups?: string[];  // Which groups (e.g., ['monday', 'friday'])
+  // Trial sessions (for non-members)
+  trialSessionsUsed?: number; // How many trial sessions they've used
   // Insurance & Health
   hasInsurance: boolean;
   insuranceProofProvided?: boolean;
@@ -114,6 +117,8 @@ export interface Session {
   // Pricing
   priceBoard: number; // Price for board members
   priceMember: number; // Price for regular members
+  // Long-term member groups allowed for free (e.g., ['monday', 'friday'])
+  allowedLongTermGroups?: string[];
   // Repeat settings
   repeatWeekly: boolean;
   repeatEndDate?: Date; // When to stop repeating
@@ -137,6 +142,7 @@ export interface Attendance {
 }
 
 export type InvoiceStatus = 'pending' | 'transfer_initiated' | 'paid' | 'overdue' | 'cancelled';
+export type InvoiceType = 'session' | 'trial_session' | 'membership' | 'topup';
 
 export interface Invoice {
   id: string;
@@ -145,6 +151,7 @@ export interface Invoice {
   memberEmail: string;
   amount: number;
   currency: 'EUR';
+  type?: InvoiceType;        // Type of invoice
   status: InvoiceStatus;
   uniquePaymentReference: string; // e.g., "BM-2024-001-ABC123"
   description: string;
@@ -206,10 +213,12 @@ export interface ClubBalance {
 
 // Member Balance for prepaid credit
 export type MemberTransactionType =
-  | 'topup'                 // Added credit
+  | 'topup'                 // Added credit via payment
+  | 'deposit'               // Manual deposit (member paid, admin adds)
+  | 'bonus'                 // Free bonus credit from admin
   | 'session_payment'       // Paid for session from balance
   | 'refund'                // Refund received
-  | 'admin_adjustment';     // Manual adjustment by admin
+  | 'admin_adjustment';     // Other manual adjustment by admin
 
 export interface MemberTransaction {
   id: string;
@@ -235,4 +244,14 @@ export interface ClubExpense {
   receiptUrl?: string;
   createdBy: string;
   createdAt: Date;
+}
+
+// Trial and Membership Settings
+export interface TrialSettings {
+  maxTrialSessions: number;     // How many trial sessions allowed
+  trialSessionPrice: number;    // Price per trial session
+  membershipFee: number;        // Yearly membership fee to become/stay active member
+  cancellationDeadlineHours: number; // Hours before session start to cancel with refund
+  lastUpdatedBy?: string;
+  lastUpdatedAt?: Date;
 }

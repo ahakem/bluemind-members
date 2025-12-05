@@ -19,6 +19,7 @@ import {
   FormControlLabel,
   Checkbox,
   InputAdornment,
+  OutlinedInput,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Edit, Warning, CheckCircle, Visibility, Delete } from '@mui/icons-material';
@@ -38,6 +39,7 @@ import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Member, User } from '../../types';
 import MemberDetailView from '../../components/MemberDetailView';
+import { LONG_TERM_GROUPS } from './SessionManagement';
 
 interface UserWithMember extends User {
   memberData?: Member;
@@ -58,6 +60,7 @@ const MemberManagement: React.FC = () => {
     role: 'member',
     isBoardMember: false,
     isLongTermMember: false,
+    longTermGroups: [] as string[],
     balance: 0,
     phone: '',
     emergencyContactName: '',
@@ -138,6 +141,7 @@ const MemberManagement: React.FC = () => {
         role: user.role || 'member',
         isBoardMember: (user as any).isBoardMember || false,
         isLongTermMember: user.memberData?.isLongTermMember || false,
+        longTermGroups: user.memberData?.longTermGroups || [],
         balance: user.memberData?.balance || 0,
         phone: user.memberData?.phone || '',
         emergencyContactName: user.memberData?.emergencyContact?.name || '',
@@ -155,6 +159,7 @@ const MemberManagement: React.FC = () => {
         role: 'member',
         isBoardMember: false,
         isLongTermMember: false,
+        longTermGroups: [],
         balance: 0,
         phone: '',
         emergencyContactName: '',
@@ -200,6 +205,7 @@ const MemberManagement: React.FC = () => {
         email: selectedUser.email,
         phone: formData.phone,
         isLongTermMember: formData.isLongTermMember,
+        longTermGroups: formData.longTermGroups,
         balance: formData.balance,
         emergencyContact: {
           name: formData.emergencyContactName,
@@ -515,12 +521,58 @@ const MemberManagement: React.FC = () => {
                 control={
                   <Checkbox
                     checked={formData.isLongTermMember}
-                    onChange={(e) => setFormData({ ...formData, isLongTermMember: e.target.checked })}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      isLongTermMember: e.target.checked,
+                      // Clear groups if unchecked
+                      longTermGroups: e.target.checked ? formData.longTermGroups : []
+                    })}
                   />
                 }
-                label="Long-term Member (free sessions)"
+                label="Long-term Member"
               />
             </Grid>
+            {formData.isLongTermMember && (
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel>Long-Term Groups</InputLabel>
+                  <Select
+                    multiple
+                    value={formData.longTermGroups}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      longTermGroups: typeof e.target.value === 'string' 
+                        ? e.target.value.split(',') 
+                        : e.target.value 
+                    })}
+                    input={<OutlinedInput label="Long-Term Groups" />}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip 
+                            key={value} 
+                            label={LONG_TERM_GROUPS.find(g => g.value === value)?.label || value}
+                            size="small"
+                            color="success"
+                          />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {LONG_TERM_GROUPS.map((group) => (
+                      <MenuItem key={group.value} value={group.value}>
+                        <Checkbox checked={formData.longTermGroups.includes(group.value)} />
+                        {group.label}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  Member can join sessions for free if they belong to a group that the session allows.
+                  "Unlimited" group has free access to all sessions.
+                </Alert>
+              </Grid>
+            )}
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
