@@ -151,5 +151,46 @@ service cloud.firestore {
       // Only admins can create, update, or delete bank details
       allow create, update, delete: if isAdmin();
     }
+    
+    // Settings collection - stores app settings including club balance
+    match /settings/{settingId} {
+      // All signed-in users can read settings
+      allow read: if isSignedIn();
+      
+      // Only admins can create, update, or delete settings
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Club transactions collection - tracks club financial transactions
+    match /clubTransactions/{transactionId} {
+      // Only admins can read club transactions
+      allow read: if isAdmin();
+      
+      // Only admins can create, update, or delete club transactions
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Club expenses collection - tracks club expenses/invoices paid
+    match /clubExpenses/{expenseId} {
+      // Only admins can read club expenses
+      allow read: if isAdmin();
+      
+      // Only admins can create, update, or delete club expenses
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Member transactions collection - tracks member balance transactions
+    match /memberTransactions/{transactionId} {
+      // Members can read their own transactions, admins can read all
+      allow read: if isSignedIn() && 
+        (resource.data.memberId == request.auth.uid || isAdmin());
+      
+      // Only admins can create member transactions (balance adjustments)
+      // System creates them during bookings via admin SDK or member action
+      allow create: if isSignedIn();
+      
+      // Only admins can update or delete member transactions
+      allow update, delete: if isAdmin();
+    }
   }
 }
