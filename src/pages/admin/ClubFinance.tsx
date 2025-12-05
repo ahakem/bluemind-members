@@ -280,6 +280,19 @@ const ClubFinance: React.FC = () => {
 
     try {
       await runTransaction(db, async (transaction) => {
+        // ============ ALL READS FIRST ============
+        const balanceRef = doc(db, 'settings', 'clubBalance');
+        const balanceDoc = await transaction.get(balanceRef);
+        const currentBalance = balanceDoc.exists() ? balanceDoc.data().currentBalance || 0 : 0;
+
+        let memberBalance = 0;
+        const memberRef = doc(db, 'members', refundMember.uid);
+        if (refundToMemberBalance) {
+          const memberDoc = await transaction.get(memberRef);
+          memberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+        }
+
+        // ============ ALL WRITES AFTER ============
         // Add club transaction record (negative amount)
         const clubTxnRef = doc(collection(db, 'clubTransactions'));
         transaction.set(clubTxnRef, {
@@ -294,9 +307,6 @@ const ClubFinance: React.FC = () => {
         });
 
         // Update club balance
-        const balanceRef = doc(db, 'settings', 'clubBalance');
-        const balanceDoc = await transaction.get(balanceRef);
-        const currentBalance = balanceDoc.exists() ? balanceDoc.data().currentBalance || 0 : 0;
         transaction.set(balanceRef, {
           currentBalance: currentBalance - amount,
           lastUpdated: Timestamp.now(),
@@ -305,9 +315,6 @@ const ClubFinance: React.FC = () => {
 
         // If refund to member balance, update member's balance
         if (refundToMemberBalance) {
-          const memberRef = doc(db, 'members', refundMember.uid);
-          const memberDoc = await transaction.get(memberRef);
-          const memberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
           transaction.update(memberRef, {
             balance: memberBalance + amount,
           });
@@ -351,10 +358,13 @@ const ClubFinance: React.FC = () => {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // Update member's balance
+        // ============ ALL READS FIRST ============
         const memberRef = doc(db, 'members', selectedMember.uid);
         const memberDoc = await transaction.get(memberRef);
         const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+
+        // ============ ALL WRITES AFTER ============
+        // Update member's balance
         transaction.update(memberRef, {
           balance: currentBalance + amount,
         });

@@ -75,8 +75,21 @@ const PaymentVerification: React.FC = () => {
       const isTopUp = (selectedInvoice as any).isTopUp;
 
       await runTransaction(db, async (transaction) => {
-        // Update invoice status
+        // ============ ALL READS FIRST ============
         const invoiceRef = doc(db, 'invoices', selectedInvoice.id);
+        const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+        const clubBalanceDoc = await transaction.get(clubBalanceRef);
+        const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+
+        let currentMemberBalance = 0;
+        const memberRef = doc(db, 'members', selectedInvoice.memberId);
+        if (isTopUp) {
+          const memberDoc = await transaction.get(memberRef);
+          currentMemberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+        }
+
+        // ============ ALL WRITES AFTER ============
+        // Update invoice status
         transaction.update(invoiceRef, {
           status: 'paid',
           paidAt: Timestamp.now(),
@@ -87,11 +100,8 @@ const PaymentVerification: React.FC = () => {
 
         // If this is a top-up, add to member balance
         if (isTopUp) {
-          const memberRef = doc(db, 'members', selectedInvoice.memberId);
-          const memberDoc = await transaction.get(memberRef);
-          const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
           transaction.update(memberRef, {
-            balance: currentBalance + selectedInvoice.amount,
+            balance: currentMemberBalance + selectedInvoice.amount,
           });
 
           // Add member transaction record
@@ -108,9 +118,6 @@ const PaymentVerification: React.FC = () => {
         }
 
         // Add to club balance
-        const clubBalanceRef = doc(db, 'settings', 'clubBalance');
-        const clubBalanceDoc = await transaction.get(clubBalanceRef);
-        const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
         transaction.set(clubBalanceRef, {
           currentBalance: clubBalance + selectedInvoice.amount,
           lastUpdated: Timestamp.now(),

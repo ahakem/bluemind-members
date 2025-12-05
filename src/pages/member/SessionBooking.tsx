@@ -277,21 +277,34 @@ const SessionBooking: React.FC = () => {
       let memberPhotoUrl = memberData?.photoUrl || '';
 
       await runTransaction(db, async (transaction) => {
+        // ============ ALL READS FIRST ============
+        let currentMemberBalance = 0;
+        let clubBalance = 0;
+        
+        const memberRef = doc(db, 'members', currentUser.uid);
+        const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+        const sessionRef = doc(db, 'sessions', session.id);
+
+        if (paymentMethod === 'balance') {
+          const memberDoc = await transaction.get(memberRef);
+          currentMemberBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+          
+          if (currentMemberBalance < price) {
+            throw new Error('Insufficient balance');
+          }
+
+          const clubBalanceDoc = await transaction.get(clubBalanceRef);
+          clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+        }
+
+        // ============ ALL WRITES AFTER ============
         let invoiceId: string | undefined;
 
         // Handle payment based on method
         if (paymentMethod === 'balance') {
           // Deduct from member balance
-          const memberRef = doc(db, 'members', currentUser.uid);
-          const memberDoc = await transaction.get(memberRef);
-          const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
-          
-          if (currentBalance < price) {
-            throw new Error('Insufficient balance');
-          }
-          
           transaction.update(memberRef, {
-            balance: currentBalance - price,
+            balance: currentMemberBalance - price,
           });
 
           // Add member transaction record
@@ -306,9 +319,6 @@ const SessionBooking: React.FC = () => {
           });
 
           // Add to club balance
-          const clubBalanceRef = doc(db, 'settings', 'clubBalance');
-          const clubBalanceDoc = await transaction.get(clubBalanceRef);
-          const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
           transaction.set(clubBalanceRef, {
             currentBalance: clubBalance + price,
             lastUpdated: Timestamp.now(),
@@ -368,7 +378,6 @@ const SessionBooking: React.FC = () => {
         });
 
         // Update session attendance count
-        const sessionRef = doc(db, 'sessions', session.id);
         transaction.update(sessionRef, {
           currentAttendance: increment(1),
         });
