@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 import SignaturePad from '../components/SignaturePad';
 import PasswordStrength from '../components/PasswordStrength';
 import PageLayout from '../components/PageLayout';
+import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns } from '../utils/inputValidation';
 import { doc, setDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from '../config/firebase';
@@ -330,23 +331,39 @@ const RegistrationForm: React.FC = () => {
         setCertFileUploading(false);
       }
       
+      // Sanitize all text inputs before saving
+      const sanitizedName = sanitizeName(formData.name);
+      const sanitizedNickname = formData.nickname ? sanitizeString(formData.nickname) : null;
+      const sanitizedEmail = formData.email.trim().toLowerCase();
+      const sanitizedPhone = sanitizePhone(formData.phone);
+      const sanitizedEmergencyName = sanitizeName(formData.emergencyName);
+      const sanitizedEmergencyPhone = sanitizePhone(formData.emergencyPhone);
+      
+      // Check for malicious content
+      const fieldsToCheck = [formData.name, formData.nickname, formData.street, formData.city, formData.emergencyName];
+      if (fieldsToCheck.some(f => f && hasMaliciousPatterns(f))) {
+        setError('Invalid characters detected in form. Please remove any special scripts.');
+        setLoading(false);
+        return;
+      }
+
       const memberData = {
         uid: userId!,
-        name: formData.name,
-        nickname: formData.nickname || null,
-        email: formData.email,
+        name: sanitizedName,
+        nickname: sanitizedNickname,
+        email: sanitizedEmail,
         dateOfBirth: Timestamp.fromDate(new Date(formData.dateOfBirth)),
         address: {
-          street: formData.street,
-          city: formData.city,
-          postalCode: formData.postalCode,
+          street: sanitizeString(formData.street),
+          city: sanitizeString(formData.city),
+          postalCode: sanitizeString(formData.postalCode),
           country: formData.country,
         },
-        phone: formData.phone,
+        phone: sanitizedPhone,
         emergencyContact: {
-          name: formData.emergencyName,
-          phone: formData.emergencyPhone,
-          relationship: formData.emergencyRelationship,
+          name: sanitizedEmergencyName,
+          phone: sanitizedEmergencyPhone,
+          relationship: sanitizeString(formData.emergencyRelationship),
         },
         hasInsurance: formData.hasInsurance === 'yes',
         insuranceProofProvided: false,

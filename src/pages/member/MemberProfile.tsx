@@ -23,6 +23,7 @@ import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import { Member } from '../../types';
+import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns } from '../../utils/inputValidation';
 
 const MemberProfile: React.FC = () => {
   const { currentUser } = useAuth();
@@ -131,20 +132,28 @@ const MemberProfile: React.FC = () => {
     setError('');
     setSuccess('');
 
+    // Check for malicious content
+    const fieldsToCheck = [formData.nickname, formData.street, formData.city, formData.emergencyName];
+    if (fieldsToCheck.some(f => f && hasMaliciousPatterns(f))) {
+      setError('Invalid characters detected. Please remove any special scripts.');
+      setSaving(false);
+      return;
+    }
+
     try {
       const updateData = {
-        nickname: formData.nickname || null,
+        nickname: formData.nickname ? sanitizeString(formData.nickname) : null,
         address: {
-          street: formData.street,
-          city: formData.city,
-          postalCode: formData.postalCode,
+          street: sanitizeString(formData.street),
+          city: sanitizeString(formData.city),
+          postalCode: sanitizeString(formData.postalCode),
           country: formData.country,
         },
-        phone: formData.phone,
+        phone: sanitizePhone(formData.phone),
         emergencyContact: {
-          name: formData.emergencyName,
-          phone: formData.emergencyPhone,
-          relationship: formData.emergencyRelationship,
+          name: sanitizeName(formData.emergencyName),
+          phone: sanitizePhone(formData.emergencyPhone),
+          relationship: sanitizeString(formData.emergencyRelationship),
         },
         personalBests: {
           STA: formData.STA || null,
