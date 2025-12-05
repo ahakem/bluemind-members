@@ -34,10 +34,11 @@ import {
   updateDoc,
   increment,
   getDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Session, Invoice } from '../../types';
+import { Session, Invoice, Member } from '../../types';
 import { format, startOfDay } from 'date-fns';
 
 interface BookingInfo {
@@ -45,6 +46,7 @@ interface BookingInfo {
   attendanceId: string;
   invoiceId?: string;
   invoiceStatus?: string;
+  paymentMethod?: string;
 }
 
 interface SessionAttendee {
@@ -62,8 +64,10 @@ const SessionBooking: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [myBookings, setMyBookings] = useState<BookingInfo[]>([]);
   const [sessionAttendees, setSessionAttendees] = useState<Record<string, SessionAttendee[]>>({});
+  const [memberData, setMemberData] = useState<Member | null>(null);
   const [, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [tabValue, setTabValue] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; session: Session | null }>({
     open: false,
@@ -76,8 +80,21 @@ const SessionBooking: React.FC = () => {
   useEffect(() => {
     if (currentUser) {
       fetchSessions();
+      fetchMemberData();
     }
   }, [currentUser]);
+
+  const fetchMemberData = async () => {
+    if (!currentUser) return;
+    try {
+      const memberDoc = await getDoc(doc(db, 'members', currentUser.uid));
+      if (memberDoc.exists()) {
+        setMemberData({ uid: memberDoc.id, ...memberDoc.data() } as Member);
+      }
+    } catch (e) {
+      console.error('Error fetching member data:', e);
+    }
+  };
 
   const fetchSessions = async () => {
     if (!currentUser) return;
@@ -161,6 +178,7 @@ const SessionBooking: React.FC = () => {
               attendanceId: attendanceDoc.id,
               invoiceId: data.invoiceId,
               invoiceStatus,
+              paymentMethod: data.paymentMethod || 'invoice',
             };
           })
       );
@@ -181,9 +199,30 @@ const SessionBooking: React.FC = () => {
   };
 
   const getPrice = (session: Session) => {
+    // Long-term members get free sessions
+    if (memberData?.isLongTermMember) {
+      return 0;
+    }
     // Check if user is board member (separate flag, not a role)
     const isBoardMember = userData?.isBoardMember || false;
     return isBoardMember ? (session.priceBoard || 0) : (session.priceMember || 0);
+  };
+
+  const getPaymentMethod = (session: Session): 'long_term' | 'balance' | 'invoice' | 'free' => {
+    const price = getPrice(session);
+    
+    // Free session
+    if (price === 0) {
+      return memberData?.isLongTermMember ? 'long_term' : 'free';
+    }
+    
+    // Has enough balance - pay from balance
+    if (memberData?.balance && memberData.balance >= price) {
+      return 'balance';
+    }
+    
+    // Otherwise, create invoice
+    return 'invoice';
   };
 
   const handleOpenConfirmDialog = (session: Session) => {
@@ -201,6 +240,7 @@ const SessionBooking: React.FC = () => {
     
     try {
       setError('');
+      setSuccess('');
 
       // Check if already booked (prevent duplicates) - local state check
       const existingBooking = myBookings.find(b => b.sessionId === session.id);
@@ -231,62 +271,123 @@ const SessionBooking: React.FC = () => {
       }
 
       const price = getPrice(session);
-
-      // Create invoice first
-      const invoiceData: Omit<Invoice, 'id'> = {
-        memberId: currentUser.uid,
-        memberName: userData.name,
-        memberEmail: userData.email,
-        amount: price,
-        currency: 'EUR',
-        status: 'pending',
-        uniquePaymentReference: generatePaymentReference(),
-        description: `Training session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
-        sessionId: session.id,
-        sessionDate: session.date,
-        dueDate: session.date, // Due before the session
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const invoiceRef = await addDoc(collection(db, 'invoices'), {
-        ...invoiceData,
-        dueDate: Timestamp.fromDate(invoiceData.dueDate),
-        sessionDate: Timestamp.fromDate(session.date),
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
+      const paymentMethod = getPaymentMethod(session);
 
       // Get member's photo URL
-      let memberPhotoUrl = '';
-      try {
-        const memberDoc = await getDoc(doc(db, 'members', currentUser.uid));
-        if (memberDoc.exists()) {
-          memberPhotoUrl = memberDoc.data().photoUrl || '';
+      let memberPhotoUrl = memberData?.photoUrl || '';
+
+      await runTransaction(db, async (transaction) => {
+        let invoiceId: string | undefined;
+
+        // Handle payment based on method
+        if (paymentMethod === 'balance') {
+          // Deduct from member balance
+          const memberRef = doc(db, 'members', currentUser.uid);
+          const memberDoc = await transaction.get(memberRef);
+          const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+          
+          if (currentBalance < price) {
+            throw new Error('Insufficient balance');
+          }
+          
+          transaction.update(memberRef, {
+            balance: currentBalance - price,
+          });
+
+          // Add member transaction record
+          const memberTxnRef = doc(collection(db, 'memberTransactions'));
+          transaction.set(memberTxnRef, {
+            memberId: currentUser.uid,
+            type: 'session_payment',
+            amount: -price,
+            description: `Session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
+            sessionId: session.id,
+            createdAt: Timestamp.now(),
+          });
+
+          // Add to club balance
+          const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+          const clubBalanceDoc = await transaction.get(clubBalanceRef);
+          const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+          transaction.set(clubBalanceRef, {
+            currentBalance: clubBalance + price,
+            lastUpdated: Timestamp.now(),
+            updatedBy: 'system',
+          }, { merge: true });
+
+          // Add club transaction record
+          const clubTxnRef = doc(collection(db, 'clubTransactions'));
+          transaction.set(clubTxnRef, {
+            type: 'session_payment',
+            amount: price,
+            description: `Session payment from ${userData.name} (balance)`,
+            memberId: currentUser.uid,
+            memberName: userData.name,
+            sessionId: session.id,
+            createdBy: 'system',
+            createdByName: 'System',
+            createdAt: Timestamp.now(),
+          });
+
+        } else if (paymentMethod === 'invoice') {
+          // Create invoice for manual payment
+          const invoiceRef = doc(collection(db, 'invoices'));
+          invoiceId = invoiceRef.id;
+          
+          transaction.set(invoiceRef, {
+            memberId: currentUser.uid,
+            memberName: userData.name,
+            memberEmail: userData.email,
+            amount: price,
+            currency: 'EUR',
+            status: 'pending',
+            uniquePaymentReference: generatePaymentReference(),
+            description: `Training session on ${format(session.date, 'MMM d, yyyy')} at ${session.locationName}`,
+            sessionId: session.id,
+            sessionDate: Timestamp.fromDate(session.date),
+            dueDate: Timestamp.fromDate(session.date),
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+          });
         }
-      } catch (e) {
-        // Ignore
+        // For 'long_term' or 'free', no payment needed
+
+        // Create attendance record
+        const attendanceRef = doc(collection(db, 'attendance'));
+        transaction.set(attendanceRef, {
+          sessionId: session.id,
+          memberId: currentUser.uid,
+          memberName: userData.name,
+          memberPhotoUrl,
+          status: 'confirmed',
+          paymentMethod,
+          amountPaid: price,
+          invoiceId: invoiceId || null,
+          rsvpAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+
+        // Update session attendance count
+        const sessionRef = doc(db, 'sessions', session.id);
+        transaction.update(sessionRef, {
+          currentAttendance: increment(1),
+        });
+      });
+
+      // Show success message based on payment method
+      if (paymentMethod === 'balance') {
+        setSuccess(`Session booked! €${price.toFixed(2)} deducted from your balance.`);
+      } else if (paymentMethod === 'long_term') {
+        setSuccess('Session booked! (Long-term member - no payment required)');
+      } else if (paymentMethod === 'free') {
+        setSuccess('Session booked! (Free session)');
+      } else {
+        setSuccess('Session booked! Please complete payment.');
       }
-
-      // Create attendance record with invoice reference
-      await addDoc(collection(db, 'attendance'), {
-        sessionId: session.id,
-        memberId: currentUser.uid,
-        memberName: userData.name,
-        memberPhotoUrl,
-        status: 'confirmed',
-        invoiceId: invoiceRef.id,
-        rsvpAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
-
-      // Update session attendance count
-      await updateDoc(doc(db, 'sessions', session.id), {
-        currentAttendance: increment(1),
-      });
 
       handleCloseConfirmDialog();
       await fetchSessions();
+      await fetchMemberData(); // Refresh balance
     } catch (error: any) {
       console.error('Error booking session:', error);
       setError(error.message || 'Failed to book session. Please try again.');
@@ -337,9 +438,21 @@ const SessionBooking: React.FC = () => {
     const booking = myBookings.find(b => b.sessionId === sessionId);
     if (!booking) return { label: '', color: 'default' };
     
+    // Check payment method first
+    if (booking.paymentMethod === 'balance') {
+      return { label: 'Paid (Balance)', color: 'success' };
+    }
+    if (booking.paymentMethod === 'long_term') {
+      return { label: 'Long-term Member', color: 'success' };
+    }
+    if (booking.paymentMethod === 'free') {
+      return { label: 'Free Session', color: 'success' };
+    }
+    
+    // For invoice payments
     switch (booking.invoiceStatus) {
       case 'paid':
-        return { label: 'Confirmed', color: 'success' };
+        return { label: 'Paid', color: 'success' };
       case 'transfer_initiated':
         return { label: 'Awaiting Confirmation', color: 'info' };
       case 'pending':
@@ -479,8 +592,28 @@ const SessionBooking: React.FC = () => {
           {error}
         </Alert>
       )}
+      
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
-      {!isMobile && (
+      {/* Member Balance Card */}
+      {memberData && (memberData.balance || memberData.isLongTermMember) && (
+        <Alert 
+          severity={memberData.isLongTermMember ? 'success' : 'info'} 
+          sx={{ mb: 2 }}
+          icon={memberData.isLongTermMember ? undefined : <Euro />}
+        >
+          {memberData.isLongTermMember && 'You are a long-term member - sessions are free! '}
+          {memberData.balance && memberData.balance > 0 && (
+            <>Your balance: <strong>€{memberData.balance.toFixed(2)}</strong></>
+          )}
+        </Alert>
+      )}
+
+      {!isMobile && !memberData?.isLongTermMember && !(memberData?.balance && memberData.balance > 0) && (
         <Alert severity="info" sx={{ mb: 3 }}>
           Subscribe to sessions to reserve your spot. An invoice will be created for each booking.
         </Alert>
@@ -560,10 +693,38 @@ const SessionBooking: React.FC = () => {
                   Price: €{getPrice(confirmDialog.session).toFixed(2)}
                 </Typography>
               </Box>
-              <Alert severity="info">
-                An invoice will be created for this booking. You can pay via bank transfer
-                and mark it as paid in your payments page.
-              </Alert>
+              
+              {/* Payment method info */}
+              {(() => {
+                const paymentMethod = getPaymentMethod(confirmDialog.session);
+                if (paymentMethod === 'long_term') {
+                  return (
+                    <Alert severity="success">
+                      As a long-term member, this session is free!
+                    </Alert>
+                  );
+                } else if (paymentMethod === 'free') {
+                  return (
+                    <Alert severity="success">
+                      This is a free session.
+                    </Alert>
+                  );
+                } else if (paymentMethod === 'balance') {
+                  return (
+                    <Alert severity="info">
+                      €{getPrice(confirmDialog.session).toFixed(2)} will be deducted from your balance
+                      (Current: €{memberData?.balance?.toFixed(2)}).
+                    </Alert>
+                  );
+                } else {
+                  return (
+                    <Alert severity="info">
+                      An invoice will be created for this booking. You can pay via bank transfer
+                      and mark it as paid in your payments page.
+                    </Alert>
+                  );
+                }
+              })()}
             </Box>
           )}
         </DialogContent>

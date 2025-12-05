@@ -16,8 +16,10 @@ import {
   Chip,
   IconButton,
   Tooltip,
+  TextField,
+  InputAdornment,
 } from '@mui/material';
-import { ContentCopy, CheckCircle, Check } from '@mui/icons-material';
+import { ContentCopy, CheckCircle, Check, AccountBalanceWallet, Add } from '@mui/icons-material';
 import {
   collection,
   getDocs,
@@ -26,10 +28,12 @@ import {
   updateDoc,
   doc,
   Timestamp,
+  getDoc,
+  addDoc,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Invoice, BankDetails } from '../../types';
+import { Invoice, BankDetails, Member } from '../../types';
 import { format } from 'date-fns';
 
 const MemberPayments: React.FC = () => {
@@ -39,6 +43,9 @@ const MemberPayments: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
+  const [memberData, setMemberData] = useState<Member | null>(null);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -48,6 +55,12 @@ const MemberPayments: React.FC = () => {
     if (!currentUser) return;
 
     try {
+      // Fetch member data for balance
+      const memberDoc = await getDoc(doc(db, 'members', currentUser.uid));
+      if (memberDoc.exists()) {
+        setMemberData({ uid: memberDoc.id, ...memberDoc.data() } as Member);
+      }
+
       // Fetch invoices
       const invoicesQuery = query(
         collection(db, 'invoices'),
@@ -84,6 +97,46 @@ const MemberPayments: React.FC = () => {
   };
 
   const fetchInvoices = fetchData; // Alias for compatibility
+
+  const generatePaymentReference = () => {
+    const year = new Date().getFullYear();
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `BM-TOP-${year}-${random}`;
+  };
+
+  const handleTopUpRequest = async () => {
+    if (!currentUser || !topUpAmount) return;
+    
+    const amount = parseFloat(topUpAmount);
+    if (isNaN(amount) || amount < 10) {
+      alert('Minimum top-up amount is €10');
+      return;
+    }
+
+    try {
+      // Create a top-up invoice
+      await addDoc(collection(db, 'invoices'), {
+        memberId: currentUser.uid,
+        memberName: memberData?.name || currentUser.displayName,
+        memberEmail: memberData?.email || currentUser.email,
+        amount: amount,
+        currency: 'EUR',
+        status: 'pending',
+        uniquePaymentReference: generatePaymentReference(),
+        description: `Account top-up: €${amount.toFixed(2)}`,
+        isTopUp: true, // Flag to identify top-up invoices
+        dueDate: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+
+      setTopUpOpen(false);
+      setTopUpAmount('');
+      fetchData();
+    } catch (error) {
+      console.error('Error creating top-up request:', error);
+    }
+  };
 
   const handleInitiateTransfer = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
@@ -138,6 +191,37 @@ const MemberPayments: React.FC = () => {
       <Typography variant="h4" gutterBottom>
         Payments & Invoices
       </Typography>
+
+      {/* Balance Card */}
+      <Card sx={{ mb: 3, bgcolor: 'primary.main', color: 'white' }}>
+        <CardContent>
+          <Grid container alignItems="center" spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <AccountBalanceWallet />
+                <Typography variant="h6">Your Balance</Typography>
+              </Box>
+              <Typography variant="h3" fontWeight="bold">
+                €{(memberData?.balance || 0).toFixed(2)}
+              </Typography>
+              {memberData?.isLongTermMember && (
+                <Chip label="Long-term Member" size="small" sx={{ mt: 1, bgcolor: 'white', color: 'primary.main' }} />
+              )}
+            </Grid>
+            <Grid item xs={12} sm={6} sx={{ textAlign: { sm: 'right' } }}>
+              <Button
+                variant="contained"
+                color="inherit"
+                startIcon={<Add />}
+                onClick={() => setTopUpOpen(true)}
+                sx={{ color: 'primary.main' }}
+              >
+                Top Up Balance
+              </Button>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
       {pendingInvoice && (
         <Alert severity="warning" sx={{ mb: 3 }}>
@@ -334,6 +418,55 @@ const MemberPayments: React.FC = () => {
             disabled={!bankDetails}
           >
             I've Completed the Transfer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Top-up Dialog */}
+      <Dialog open={topUpOpen} onClose={() => setTopUpOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Top Up Your Balance</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Add credit to your account to pay for sessions instantly without waiting for payment verification.
+          </Alert>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Amount"
+            type="number"
+            value={topUpAmount}
+            onChange={(e) => setTopUpAmount(e.target.value)}
+            InputProps={{
+              startAdornment: <InputAdornment position="start">€</InputAdornment>,
+            }}
+            helperText="Minimum €10. After payment is verified, credit will be added to your balance."
+            sx={{ mt: 1 }}
+          />
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Quick amounts:
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+              {[20, 50, 100].map((amount) => (
+                <Chip
+                  key={amount}
+                  label={`€${amount}`}
+                  onClick={() => setTopUpAmount(amount.toString())}
+                  variant={topUpAmount === amount.toString() ? 'filled' : 'outlined'}
+                  color="primary"
+                />
+              ))}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTopUpOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={handleTopUpRequest} 
+            variant="contained" 
+            disabled={!topUpAmount || parseFloat(topUpAmount) < 10}
+          >
+            Request Top-up
           </Button>
         </DialogActions>
       </Dialog>

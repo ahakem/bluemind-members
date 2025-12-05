@@ -18,6 +18,7 @@ import {
   InputLabel,
   FormControlLabel,
   Checkbox,
+  InputAdornment,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Edit, Warning, CheckCircle, Visibility, Delete } from '@mui/icons-material';
@@ -56,6 +57,8 @@ const MemberManagement: React.FC = () => {
     approved: false,
     role: 'member',
     isBoardMember: false,
+    isLongTermMember: false,
+    balance: 0,
     phone: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
@@ -134,6 +137,8 @@ const MemberManagement: React.FC = () => {
         approved: user.approved || false,
         role: user.role || 'member',
         isBoardMember: (user as any).isBoardMember || false,
+        isLongTermMember: user.memberData?.isLongTermMember || false,
+        balance: user.memberData?.balance || 0,
         phone: user.memberData?.phone || '',
         emergencyContactName: user.memberData?.emergencyContact?.name || '',
         emergencyContactPhone: user.memberData?.emergencyContact?.phone || '',
@@ -149,6 +154,8 @@ const MemberManagement: React.FC = () => {
         approved: false,
         role: 'member',
         isBoardMember: false,
+        isLongTermMember: false,
+        balance: 0,
         phone: '',
         emergencyContactName: '',
         emergencyContactPhone: '',
@@ -192,6 +199,8 @@ const MemberManagement: React.FC = () => {
         name: selectedUser.name,
         email: selectedUser.email,
         phone: formData.phone,
+        isLongTermMember: formData.isLongTermMember,
+        balance: formData.balance,
         emergencyContact: {
           name: formData.emergencyContactName,
           phone: formData.emergencyContactPhone,
@@ -304,6 +313,27 @@ const MemberManagement: React.FC = () => {
       renderCell: (params: GridRenderCellParams) => {
         const isBoard = params.value as boolean;
         return isBoard ? <Chip label="Yes" color="secondary" size="small" /> : null;
+      },
+    },
+    {
+      field: 'isLongTermMember',
+      headerName: 'Long-term',
+      width: 90,
+      valueGetter: (params) => params.row.memberData?.isLongTermMember || false,
+      renderCell: (params: GridRenderCellParams) => {
+        return params.value ? <Chip label="Yes" color="info" size="small" /> : null;
+      },
+    },
+    {
+      field: 'balance',
+      headerName: 'Balance',
+      width: 90,
+      valueGetter: (params) => params.row.memberData?.balance || 0,
+      renderCell: (params: GridRenderCellParams) => {
+        const balance = params.value as number;
+        return balance > 0 ? (
+          <Chip label={`€${balance.toFixed(2)}`} color="success" size="small" variant="outlined" />
+        ) : null;
       },
     },
     {
@@ -478,6 +508,30 @@ const MemberManagement: React.FC = () => {
                   />
                 }
                 label="Board Member (gets board member pricing)"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.isLongTermMember}
+                    onChange={(e) => setFormData({ ...formData, isLongTermMember: e.target.checked })}
+                  />
+                }
+                label="Long-term Member (free sessions)"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Account Balance (€)"
+                type="number"
+                value={formData.balance}
+                onChange={(e) => setFormData({ ...formData, balance: parseFloat(e.target.value) || 0 })}
+                helperText="Member's prepaid credit balance"
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">€</InputAdornment>,
+                }}
               />
             </Grid>
             <Grid item xs={12} sm={6}>

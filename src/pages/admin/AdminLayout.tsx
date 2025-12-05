@@ -25,6 +25,7 @@ import {
   EmojiEvents,
   Receipt,
   LocationOn,
+  AccountBalance,
 } from '@mui/icons-material';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -84,6 +85,7 @@ const AdminLayout: React.FC = () => {
     { text: 'Locations & Bank', icon: <LocationOn />, path: '/admin/locations' },
     { text: 'Attendance', icon: <CheckCircle />, path: '/admin/attendance' },
     { text: 'Payments', icon: <Payment />, path: '/admin/payments' },
+    { text: 'Club Finance', icon: <AccountBalance />, path: '/admin/finance' },
     { text: 'Content', icon: <Article />, path: '/admin/content' },
   ];
 

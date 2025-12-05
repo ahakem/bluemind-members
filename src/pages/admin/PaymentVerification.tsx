@@ -22,6 +22,9 @@ import {
   updateDoc,
   doc,
   Timestamp,
+  getDoc,
+  runTransaction,
+  addDoc,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -69,13 +72,66 @@ const PaymentVerification: React.FC = () => {
     if (!selectedInvoice || !currentUser) return;
 
     try {
-      // Update invoice status
-      await updateDoc(doc(db, 'invoices', selectedInvoice.id), {
-        status: 'paid',
-        paidAt: Timestamp.now(),
-        confirmedBy: currentUser.uid,
-        confirmedAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
+      const isTopUp = (selectedInvoice as any).isTopUp;
+
+      await runTransaction(db, async (transaction) => {
+        // Update invoice status
+        const invoiceRef = doc(db, 'invoices', selectedInvoice.id);
+        transaction.update(invoiceRef, {
+          status: 'paid',
+          paidAt: Timestamp.now(),
+          confirmedBy: currentUser.uid,
+          confirmedAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
+
+        // If this is a top-up, add to member balance
+        if (isTopUp) {
+          const memberRef = doc(db, 'members', selectedInvoice.memberId);
+          const memberDoc = await transaction.get(memberRef);
+          const currentBalance = memberDoc.exists() ? memberDoc.data().balance || 0 : 0;
+          transaction.update(memberRef, {
+            balance: currentBalance + selectedInvoice.amount,
+          });
+
+          // Add member transaction record
+          const memberTxnRef = doc(collection(db, 'memberTransactions'));
+          transaction.set(memberTxnRef, {
+            memberId: selectedInvoice.memberId,
+            type: 'topup',
+            amount: selectedInvoice.amount,
+            description: `Account top-up (${selectedInvoice.uniquePaymentReference})`,
+            adminId: currentUser.uid,
+            adminName: currentUser.displayName || currentUser.email,
+            createdAt: Timestamp.now(),
+          });
+        }
+
+        // Add to club balance
+        const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+        const clubBalanceDoc = await transaction.get(clubBalanceRef);
+        const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+        transaction.set(clubBalanceRef, {
+          currentBalance: clubBalance + selectedInvoice.amount,
+          lastUpdated: Timestamp.now(),
+          updatedBy: currentUser.uid,
+        }, { merge: true });
+
+        // Add club transaction record
+        const clubTxnRef = doc(collection(db, 'clubTransactions'));
+        transaction.set(clubTxnRef, {
+          type: isTopUp ? 'member_topup' : 'session_payment',
+          amount: selectedInvoice.amount,
+          description: isTopUp 
+            ? `Top-up from ${selectedInvoice.memberName}` 
+            : `Session payment from ${selectedInvoice.memberName}`,
+          memberId: selectedInvoice.memberId,
+          memberName: selectedInvoice.memberName,
+          invoiceId: selectedInvoice.id,
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+          createdAt: Timestamp.now(),
+        });
       });
 
       fetchInvoices();

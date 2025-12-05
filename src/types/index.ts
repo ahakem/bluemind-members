@@ -52,6 +52,9 @@ export interface Member {
     phone: string;
     relationship: string;
   };
+  // Financial
+  balance?: number;          // Prepaid credit balance
+  isLongTermMember?: boolean; // Long-term members get free sessions
   // Insurance & Health
   hasInsurance: boolean;
   insuranceProofProvided?: boolean;
@@ -125,7 +128,10 @@ export interface Attendance {
   sessionId: string;
   memberId: string;
   memberName: string;
+  memberPhotoUrl?: string;  // Profile photo for display
   status: 'confirmed' | 'attended' | 'cancelled' | 'no_show';
+  paymentMethod?: 'balance' | 'invoice' | 'long_term' | 'free'; // How session was paid
+  amountPaid?: number;      // Amount paid/deducted
   rsvpAt: Date;
   updatedAt: Date;
 }
@@ -166,5 +172,67 @@ export interface ContentPage {
   content: string; // HTML content from rich text editor
   lastUpdatedBy: string; // User ID
   lastUpdatedAt: Date;
+  createdAt: Date;
+}
+
+// Club Financial Management
+export type ClubTransactionType = 
+  | 'session_payment'      // Money from session payment
+  | 'refund'               // Refund to member
+  | 'manual_add'           // Manual addition by admin
+  | 'invoice_payment'      // Payment of club invoice/expense
+  | 'member_topup';        // Member buying credit
+
+export interface ClubTransaction {
+  id: string;
+  type: ClubTransactionType;
+  amount: number;           // Positive for income, negative for expenses
+  description: string;
+  memberId?: string;        // Related member if applicable
+  memberName?: string;
+  invoiceId?: string;       // Related invoice if applicable
+  sessionId?: string;       // Related session if applicable
+  createdBy: string;        // Admin who created this
+  createdByName: string;
+  createdAt: Date;
+}
+
+// Club Balance stored as a single document
+export interface ClubBalance {
+  currentBalance: number;
+  lastUpdated: Date;
+  updatedBy: string;
+}
+
+// Member Balance for prepaid credit
+export type MemberTransactionType =
+  | 'topup'                 // Added credit
+  | 'session_payment'       // Paid for session from balance
+  | 'refund'                // Refund received
+  | 'admin_adjustment';     // Manual adjustment by admin
+
+export interface MemberTransaction {
+  id: string;
+  memberId: string;
+  type: MemberTransactionType;
+  amount: number;           // Positive for credit, negative for debit
+  description: string;
+  sessionId?: string;
+  adminId?: string;         // If admin made the change
+  adminName?: string;
+  createdAt: Date;
+}
+
+// Club Expense/Invoice
+export interface ClubExpense {
+  id: string;
+  vendor: string;
+  description: string;
+  amount: number;
+  dueDate?: Date;
+  paidAt?: Date;
+  status: 'pending' | 'paid';
+  receiptUrl?: string;
+  createdBy: string;
   createdAt: Date;
 }
