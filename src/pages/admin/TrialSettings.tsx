@@ -29,7 +29,7 @@ const TrialSettings: React.FC = () => {
     maxTrialSessions: 3,
     trialSessionPrice: 10,
     membershipFee: 25,
-    cancellationDeadlineHours: 24,
+    cancellationDeadlineDays: 60,
   });
 
   useEffect(() => {
@@ -45,7 +45,7 @@ const TrialSettings: React.FC = () => {
           maxTrialSessions: data.maxTrialSessions || 3,
           trialSessionPrice: data.trialSessionPrice || 10,
           membershipFee: data.membershipFee || 25,
-          cancellationDeadlineHours: data.cancellationDeadlineHours ?? 24,
+          cancellationDeadlineDays: data.cancellationDeadlineDays ?? 60,
           lastUpdatedBy: data.lastUpdatedBy,
           lastUpdatedAt: data.lastUpdatedAt?.toDate(),
         });
@@ -68,7 +68,7 @@ const TrialSettings: React.FC = () => {
         maxTrialSessions: settings.maxTrialSessions,
         trialSessionPrice: settings.trialSessionPrice,
         membershipFee: settings.membershipFee,
-        cancellationDeadlineHours: settings.cancellationDeadlineHours,
+        cancellationDeadlineDays: settings.cancellationDeadlineDays,
         lastUpdatedBy: currentUser?.uid,
         lastUpdatedAt: Timestamp.now(),
       });
@@ -190,12 +190,12 @@ const TrialSettings: React.FC = () => {
 
               <TextField
                 fullWidth
-                label="Cancellation Deadline (hours before session)"
+                label="Cancellation Deadline (days before session)"
                 type="number"
-                value={settings.cancellationDeadlineHours}
-                onChange={(e) => setSettings({ ...settings, cancellationDeadlineHours: parseInt(e.target.value) || 0 })}
+                value={settings.cancellationDeadlineDays}
+                onChange={(e) => setSettings({ ...settings, cancellationDeadlineDays: parseInt(e.target.value) || 0 })}
                 inputProps={{ min: 0 }}
-                helperText="Hours before session start that cancellation with refund is allowed (e.g., 24 = 1 day before)"
+                helperText="Days before session start that cancellation with refund is allowed (e.g., 60 = 2 months before)"
               />
             </CardContent>
           </Card>
@@ -241,7 +241,7 @@ const TrialSettings: React.FC = () => {
               <Grid item xs={6} sm={3}>
                 <Box sx={{ textAlign: 'center', p: 2 }}>
                   <Typography variant="h3" color="warning.main">
-                    {settings.cancellationDeadlineHours}h
+                    {settings.cancellationDeadlineDays}d
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Cancel Deadline

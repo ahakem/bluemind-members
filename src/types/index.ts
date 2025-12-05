@@ -141,7 +141,7 @@ export interface Attendance {
   updatedAt: Date;
 }
 
-export type InvoiceStatus = 'pending' | 'transfer_initiated' | 'paid' | 'overdue' | 'cancelled';
+export type InvoiceStatus = 'pending' | 'transfer_initiated' | 'paid' | 'overdue' | 'cancelled' | 'rejected';
 export type InvoiceType = 'session' | 'trial_session' | 'membership' | 'topup';
 
 export interface Invoice {
@@ -164,6 +164,9 @@ export interface Invoice {
   transferInitiatedAt?: Date;
   confirmedBy?: string; // Admin who confirmed the payment
   confirmedAt?: Date;
+  rejectedBy?: string; // Admin who rejected the payment
+  rejectedAt?: Date;
+  rejectionReason?: string;
 }
 
 export interface PaymentInfo {
@@ -251,7 +254,7 @@ export interface TrialSettings {
   maxTrialSessions: number;     // How many trial sessions allowed
   trialSessionPrice: number;    // Price per trial session
   membershipFee: number;        // Yearly membership fee to become/stay active member
-  cancellationDeadlineHours: number; // Hours before session start to cancel with refund
+  cancellationDeadlineDays: number; // Days before session start to cancel with refund
   lastUpdatedBy?: string;
   lastUpdatedAt?: Date;
 }

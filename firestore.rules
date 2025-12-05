@@ -54,8 +54,8 @@ service cloud.firestore {
       allow create: if isSignedIn() && isOwner(memberId);
       
       // Members can update their own data (limited fields)
-      // Cannot change: photographyConsent, membershipStatus, medicalCertificate, agreedTo* fields, signature
-      // CAN change: balance, trialSessionsUsed (for bookings), profile fields
+      // Cannot change: photographyConsent, medicalCertificate, agreedTo* fields, signature
+      // CAN change: balance, trialSessionsUsed (for bookings), membershipStatus (for self-paid membership), profile fields, personalBests
       allow update: if isSignedIn() && (
         (isOwner(memberId) && 
          // Only allow updating if NOT touching protected fields
@@ -63,7 +63,8 @@ service cloud.firestore {
            'name', 'nickname', 'phone', 'address', 'emergencyContact',
            'certifications', 'hasInsurance', 'insuranceProofProvided',
            'isEmergencyResponder', 'emergencyResponderProof', 'photoUrl',
-           'balance', 'trialSessionsUsed', 'isLongTermMember', 'longTermGroups'
+           'balance', 'trialSessionsUsed', 'isLongTermMember', 'longTermGroups',
+           'membershipStatus', 'updatedAt', 'personalBests'
          ])) ||
         isAdmin()
       );

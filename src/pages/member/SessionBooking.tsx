@@ -20,8 +20,13 @@ import {
   AvatarGroup,
   Tooltip,
   Paper,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
-import { Event, People, LocationOn, Euro, Payment, CardMembership, Warning } from '@mui/icons-material';
+import { Event, People, LocationOn, Euro, Payment, CardMembership, Warning, CalendarMonth, Apple, Google } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   collection,
@@ -39,7 +44,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Session, Invoice, Member, TrialSettings } from '../../types';
+import { Session, Invoice, Member, TrialSettings, PoolLocation } from '../../types';
 import { format, startOfDay } from 'date-fns';
 
 interface BookingInfo {
@@ -77,6 +82,11 @@ const SessionBooking: React.FC = () => {
     open: false,
     session: null,
   });
+  const [calendarDialog, setCalendarDialog] = useState<{ open: boolean; session: Session | null }>({
+    open: false,
+    session: null,
+  });
+  const [locations, setLocations] = useState<Record<string, PoolLocation>>({});
 
   // Determine if we're in admin context
   const isAdminContext = location.pathname.startsWith('/admin');
@@ -86,6 +96,7 @@ const SessionBooking: React.FC = () => {
       fetchSessions();
       fetchMemberData();
       fetchTrialSettings();
+      fetchLocations();
     }
   }, [currentUser]);
 
@@ -100,7 +111,7 @@ const SessionBooking: React.FC = () => {
           maxTrialSessions: 3,
           trialSessionPrice: 10,
           membershipFee: 25,
-          cancellationDeadlineHours: 24,
+          cancellationDeadlineDays: 60,
         });
       }
     } catch (e) {
@@ -117,6 +128,19 @@ const SessionBooking: React.FC = () => {
       }
     } catch (e) {
       console.error('Error fetching member data:', e);
+    }
+  };
+
+  const fetchLocations = async () => {
+    try {
+      const locationsSnapshot = await getDocs(collection(db, 'locations'));
+      const locationsMap: Record<string, PoolLocation> = {};
+      locationsSnapshot.docs.forEach(doc => {
+        locationsMap[doc.id] = { id: doc.id, ...doc.data() } as PoolLocation;
+      });
+      setLocations(locationsMap);
+    } catch (e) {
+      console.error('Error fetching locations:', e);
     }
   };
 
@@ -246,7 +270,74 @@ const SessionBooking: React.FC = () => {
     return Math.max(0, trialSettings.maxTrialSessions - getTrialSessionsUsed());
   };
 
-  // Check if member qualifies for free session based on long-term groups
+  // Calendar helper functions
+  const formatDateForCalendar = (date: Date, time: string): string => {
+    const [hours, minutes] = time.split(':').map(Number);
+    const d = new Date(date);
+    d.setHours(hours, minutes, 0, 0);
+    return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  };
+
+  // Get location address from locationId
+  const getLocationAddress = (session: Session): string => {
+    const loc = locations[session.locationId];
+    return loc?.address || session.locationName || '';
+  };
+
+  const generateGoogleCalendarUrl = (session: Session): string => {
+    const startDateTime = formatDateForCalendar(session.date, session.startTime);
+    const endDateTime = formatDateForCalendar(session.date, session.endTime);
+    const title = encodeURIComponent(`Blue Mind Freediving - ${session.type.replace('_', ' ')}`);
+    const location = encodeURIComponent(getLocationAddress(session));
+    const details = encodeURIComponent(session.description || `Freediving ${session.type.replace('_', ' ')} session at ${session.locationName}`);
+    
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startDateTime}/${endDateTime}&location=${location}&details=${details}`;
+  };
+
+  const generateICSContent = (session: Session): string => {
+    const startDateTime = formatDateForCalendar(session.date, session.startTime);
+    const endDateTime = formatDateForCalendar(session.date, session.endTime);
+    const title = `Blue Mind Freediving - ${session.type.replace('_', ' ')}`;
+    const location = getLocationAddress(session);
+    const description = session.description || `Freediving ${session.type.replace('_', ' ')} session at ${session.locationName}`;
+    
+    return `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Blue Mind Freediving//Session//EN
+BEGIN:VEVENT
+DTSTART:${startDateTime}
+DTEND:${endDateTime}
+SUMMARY:${title}
+LOCATION:${location}
+DESCRIPTION:${description}
+END:VEVENT
+END:VCALENDAR`;
+  };
+
+  const downloadICSFile = (session: Session) => {
+    const icsContent = generateICSContent(session);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `bluemind-session-${format(session.date, 'yyyy-MM-dd')}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const generateOutlookUrl = (session: Session): string => {
+    const startDateTime = formatDateForCalendar(session.date, session.startTime);
+    const endDateTime = formatDateForCalendar(session.date, session.endTime);
+    const title = encodeURIComponent(`Blue Mind Freediving - ${session.type.replace('_', ' ')}`);
+    const location = encodeURIComponent(getLocationAddress(session));
+    const details = encodeURIComponent(session.description || `Freediving ${session.type.replace('_', ' ')} session at ${session.locationName}`);
+    
+    return `https://outlook.live.com/calendar/0/deeplink/compose?subject=${title}&startdt=${startDateTime}&enddt=${endDateTime}&location=${location}&body=${details}`;
+  };
+
+  // Check if member qualifies for free session based on long-term groups  // Check if member qualifies for free session based on long-term groups
   const memberQualifiesForFreeSession = (session: Session): boolean => {
     // Must be a long-term member
     if (!memberData?.isLongTermMember) {
@@ -527,6 +618,9 @@ const SessionBooking: React.FC = () => {
         setSuccess('Session booked! Please complete payment.');
       }
 
+      // Show calendar dialog
+      setCalendarDialog({ open: true, session });
+      
       handleCloseConfirmDialog();
       await fetchSessions();
       await fetchMemberData(); // Refresh balance
@@ -548,9 +642,9 @@ const SessionBooking: React.FC = () => {
     // Check if eligible for refund based on cancellation deadline
     const sessionDateTime = session.date instanceof Date ? session.date : new Date(session.date);
     const now = new Date();
-    const hoursUntilSession = (sessionDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-    const deadlineHours = trialSettings?.cancellationDeadlineHours || 24;
-    const isWithinRefundDeadline = hoursUntilSession >= deadlineHours;
+    const daysUntilSession = (sessionDateTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    const deadlineDays = trialSettings?.cancellationDeadlineDays || 60;
+    const isWithinRefundDeadline = daysUntilSession >= deadlineDays;
     const canGetRefund = isWithinRefundDeadline && booking.paymentMethod === 'balance' && (booking.amountPaid || 0) > 0;
 
     let confirmMessage = 'Are you sure you want to cancel this booking?';
@@ -558,7 +652,7 @@ const SessionBooking: React.FC = () => {
     if (canGetRefund) {
       confirmMessage = `Cancel this booking? You will receive a refund of €${(booking.amountPaid || 0).toFixed(2)} to your balance.`;
     } else if (booking.paymentMethod === 'balance' && (booking.amountPaid || 0) > 0 && !isWithinRefundDeadline) {
-      confirmMessage = `Warning: You are cancelling less than ${deadlineHours} hours before the session. You will NOT receive a refund. Are you sure?`;
+      confirmMessage = `Warning: You are cancelling less than ${deadlineDays} days before the session. You will NOT receive a refund. Are you sure?`;
     } else if (booking.invoiceId) {
       confirmMessage = 'Are you sure you want to cancel this booking? The invoice will also be cancelled.';
     }
@@ -660,29 +754,85 @@ const SessionBooking: React.FC = () => {
 
     try {
       setError('');
+      const membershipFee = trialSettings.membershipFee;
+      const currentBalance = memberData?.balance || 0;
       
-      // Create membership invoice
-      await addDoc(collection(db, 'invoices'), {
-        memberId: currentUser.uid,
-        memberName: userData.name,
-        memberEmail: userData.email,
-        amount: trialSettings.membershipFee,
-        currency: 'EUR',
-        type: 'membership',
-        status: 'pending',
-        uniquePaymentReference: generatePaymentReference(),
-        description: 'Blue Mind Freediving - Yearly Membership Fee',
-        dueDate: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      });
+      // Check if member has enough balance to pay directly
+      if (currentBalance >= membershipFee) {
+        // Pay from balance using transaction
+        await runTransaction(db, async (transaction) => {
+          const memberRef = doc(db, 'members', currentUser.uid);
+          const clubBalanceRef = doc(db, 'settings', 'clubBalance');
+          
+          // Read current club balance
+          const clubBalanceDoc = await transaction.get(clubBalanceRef);
+          const clubBalance = clubBalanceDoc.exists() ? clubBalanceDoc.data().currentBalance || 0 : 0;
+          
+          // Deduct from member balance
+          transaction.update(memberRef, {
+            balance: currentBalance - membershipFee,
+            membershipStatus: 'active',
+            updatedAt: Timestamp.now(),
+          });
+          
+          // Add to club balance
+          transaction.set(clubBalanceRef, {
+            currentBalance: clubBalance + membershipFee,
+            lastUpdated: Timestamp.now(),
+            updatedBy: currentUser.uid,
+          }, { merge: true });
+          
+          // Create member transaction record
+          const memberTxnRef = doc(collection(db, 'memberTransactions'));
+          transaction.set(memberTxnRef, {
+            memberId: currentUser.uid,
+            type: 'session_payment',
+            amount: -membershipFee,
+            description: 'Yearly Membership Fee (paid from balance)',
+            createdAt: Timestamp.now(),
+          });
+          
+          // Create club transaction record
+          const clubTxnRef = doc(collection(db, 'clubTransactions'));
+          transaction.set(clubTxnRef, {
+            type: 'session_payment',
+            amount: membershipFee,
+            description: `Membership fee from ${userData.name} (balance)`,
+            memberId: currentUser.uid,
+            memberName: userData.name,
+            createdBy: 'system',
+            createdByName: 'System',
+            createdAt: Timestamp.now(),
+          });
+        });
+        
+        setSuccess(`Membership activated! €${membershipFee.toFixed(2)} deducted from your balance.`);
+        setMembershipDialogOpen(false);
+        await fetchMemberData(); // Refresh balance
+      } else {
+        // Create membership invoice for bank transfer
+        await addDoc(collection(db, 'invoices'), {
+          memberId: currentUser.uid,
+          memberName: userData.name,
+          memberEmail: userData.email,
+          amount: membershipFee,
+          currency: 'EUR',
+          type: 'membership',
+          status: 'pending',
+          uniquePaymentReference: generatePaymentReference(),
+          description: 'Blue Mind Freediving - Yearly Membership Fee',
+          dueDate: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        });
 
-      setSuccess(`Membership invoice created for €${trialSettings.membershipFee.toFixed(2)}. Please complete payment to activate your membership.`);
-      setMembershipDialogOpen(false);
-      
-      // Navigate to payments page
-      const paymentsPath = isAdminContext ? '/admin/my-payments' : '/member/payments';
-      navigate(paymentsPath);
+        setSuccess(`Membership invoice created for €${membershipFee.toFixed(2)}. Please complete payment to activate your membership.`);
+        setMembershipDialogOpen(false);
+        
+        // Navigate to payments page
+        const paymentsPath = isAdminContext ? '/admin/my-payments' : '/member/payments';
+        navigate(paymentsPath);
+      }
     } catch (error: any) {
       console.error('Error creating membership invoice:', error);
       setError(error.message || 'Failed to create membership invoice. Please try again.');
@@ -824,6 +974,16 @@ const SessionBooking: React.FC = () => {
                   {isMobile ? 'Pay' : 'Go to Payments'}
                 </Button>
               )}
+              <Button
+                fullWidth
+                variant="outlined"
+                color="info"
+                size={isMobile ? 'small' : 'medium'}
+                startIcon={<CalendarMonth />}
+                onClick={() => setCalendarDialog({ open: true, session })}
+              >
+                {isMobile ? 'Calendar' : 'Add to Calendar'}
+              </Button>
               <Button
                 fullWidth
                 variant="outlined"
@@ -1115,6 +1275,107 @@ const SessionBooking: React.FC = () => {
             startIcon={<CardMembership />}
           >
             Create Membership Invoice
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add to Calendar Dialog */}
+      <Dialog 
+        open={calendarDialog.open} 
+        onClose={() => setCalendarDialog({ open: false, session: null })} 
+        maxWidth="xs" 
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CalendarMonth color="primary" />
+          Add to Calendar
+        </DialogTitle>
+        <DialogContent>
+          {calendarDialog.session && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Add this session to your calendar:
+              </Typography>
+              <Card variant="outlined" sx={{ mt: 2, mb: 2 }}>
+                <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+                  <Typography variant="subtitle2" fontWeight="bold" sx={{ textTransform: 'capitalize' }}>
+                    {calendarDialog.session.type.replace('_', ' ')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    📍 {calendarDialog.session.locationName}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', ml: 2.5 }}>
+                    {getLocationAddress(calendarDialog.session)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    📅 {format(new Date(calendarDialog.session.date instanceof Date ? calendarDialog.session.date : calendarDialog.session.date), 'EEEE, MMMM d, yyyy')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    🕐 {calendarDialog.session.startTime} - {calendarDialog.session.endTime}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Box>
+          )}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                if (calendarDialog.session) {
+                  window.open(generateGoogleCalendarUrl(calendarDialog.session), '_blank');
+                }
+              }}
+              sx={{ 
+                justifyContent: 'flex-start', 
+                textTransform: 'none',
+                py: 1.5
+              }}
+            >
+              <Box component="img" src="https://www.google.com/calendar/images/favicon_v2014_1.ico" sx={{ width: 20, height: 20, mr: 2 }} />
+              Add to Google Calendar
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                if (calendarDialog.session) {
+                  downloadICSFile(calendarDialog.session);
+                }
+              }}
+              sx={{ 
+                justifyContent: 'flex-start', 
+                textTransform: 'none',
+                py: 1.5
+              }}
+            >
+              <Box component="span" sx={{ width: 20, height: 20, mr: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                📅
+              </Box>
+              Download for Apple Calendar / Other
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                if (calendarDialog.session) {
+                  window.open(generateOutlookUrl(calendarDialog.session), '_blank');
+                }
+              }}
+              sx={{ 
+                justifyContent: 'flex-start', 
+                textTransform: 'none',
+                py: 1.5
+              }}
+            >
+              <Box component="img" src="https://outlook.live.com/favicon.ico" sx={{ width: 20, height: 20, mr: 2 }} />
+              Add to Outlook Calendar
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCalendarDialog({ open: false, session: null })}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>

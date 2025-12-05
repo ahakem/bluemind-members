@@ -11,9 +11,10 @@ import {
   Chip,
   Tabs,
   Tab,
+  TextField,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { CheckCircle } from '@mui/icons-material';
+import { CheckCircle, Cancel } from '@mui/icons-material';
 import {
   collection,
   getDocs,
@@ -37,6 +38,8 @@ const PaymentVerification: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [confirmDialog, setConfirmDialog] = useState(false);
+  const [rejectDialog, setRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [tabValue, setTabValue] = useState(0);
 
   useEffect(() => {
@@ -48,18 +51,22 @@ const PaymentVerification: React.FC = () => {
       const invoicesQuery = query(collection(db, 'invoices'));
       const querySnapshot = await getDocs(invoicesQuery);
       const invoicesList = querySnapshot.docs
-        .filter(doc => doc.data().status !== 'cancelled')
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          dueDate: doc.data().dueDate?.toDate(),
-          sessionDate: doc.data().sessionDate?.toDate(),
-          createdAt: doc.data().createdAt?.toDate(),
-          updatedAt: doc.data().updatedAt?.toDate(),
-          transferInitiatedAt: doc.data().transferInitiatedAt?.toDate(),
-          paidAt: doc.data().paidAt?.toDate(),
-          confirmedAt: doc.data().confirmedAt?.toDate(),
-        })) as Invoice[];
+        .filter(docSnap => docSnap.data().status !== 'cancelled') // Only exclude cancelled, show rejected
+        .map(docSnap => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            ...data,
+            dueDate: data.dueDate?.toDate(),
+            sessionDate: data.sessionDate?.toDate(),
+            createdAt: data.createdAt?.toDate(),
+            updatedAt: data.updatedAt?.toDate(),
+            transferInitiatedAt: data.transferInitiatedAt?.toDate(),
+            paidAt: data.paidAt?.toDate(),
+            confirmedAt: data.confirmedAt?.toDate(),
+            rejectedAt: data.rejectedAt?.toDate(),
+          } as Invoice;
+        });
       setInvoices(invoicesList.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
     } catch (error) {
       console.error('Error fetching invoices:', error);
@@ -161,9 +168,38 @@ const PaymentVerification: React.FC = () => {
     }
   };
 
+  const handleRejectPayment = async () => {
+    if (!selectedInvoice || !currentUser) return;
+
+    try {
+      const invoiceRef = doc(db, 'invoices', selectedInvoice.id);
+      
+      await updateDoc(invoiceRef, {
+        status: 'rejected',
+        rejectedBy: currentUser.uid,
+        rejectedAt: Timestamp.now(),
+        rejectionReason: rejectReason || 'Payment rejected by admin',
+        updatedAt: Timestamp.now(),
+      });
+
+      fetchInvoices();
+      setRejectDialog(false);
+      setSelectedInvoice(null);
+      setRejectReason('');
+    } catch (error) {
+      console.error('Error rejecting payment:', error);
+    }
+  };
+
   const openConfirmDialog = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
     setConfirmDialog(true);
+  };
+
+  const openRejectDialog = (invoice: Invoice) => {
+    setSelectedInvoice(invoice);
+    setRejectReason('');
+    setRejectDialog(true);
   };
 
   const columns: GridColDef[] = [
@@ -200,6 +236,7 @@ const PaymentVerification: React.FC = () => {
         if (status === 'transfer_initiated') color = 'warning';
         else if (status === 'paid') color = 'success';
         else if (status === 'pending') color = 'info';
+        else if (status === 'rejected') color = 'error';
         return (
           <Chip
             label={status.replace('_', ' ')}
@@ -226,26 +263,49 @@ const PaymentVerification: React.FC = () => {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 130,
+      width: 250,
+      minWidth: 200,
       renderCell: (params: GridRenderCellParams) => {
         const invoice = params.row as Invoice;
-        return invoice.status === 'transfer_initiated' ? (
-          <Button
-            variant="contained"
-            color="success"
-            size="small"
-            startIcon={<CheckCircle />}
-            onClick={() => openConfirmDialog(invoice)}
-          >
-            Confirm
-          </Button>
-        ) : null;
+        const canConfirm = invoice.status === 'transfer_initiated';
+        const canReject = invoice.status === 'pending' || invoice.status === 'transfer_initiated';
+        
+        return (
+          <Box display="flex" gap={1} alignItems="center">
+            {canConfirm && (
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<CheckCircle />}
+                onClick={() => openConfirmDialog(invoice)}
+              >
+                Confirm
+              </Button>
+            )}
+            {canReject && (
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                startIcon={<Cancel />}
+                onClick={() => openRejectDialog(invoice)}
+              >
+                Reject
+              </Button>
+            )}
+            {!canConfirm && !canReject && (
+              <Typography variant="body2" color="text.secondary">-</Typography>
+            )}
+          </Box>
+        );
       },
     },
   ];
 
   const pendingInvoices = invoices.filter(inv => inv.status === 'pending' || inv.status === 'transfer_initiated');
   const paidInvoices = invoices.filter(inv => inv.status === 'paid');
+  const rejectedInvoices = invoices.filter(inv => inv.status === 'rejected');
   const transferInitiatedCount = invoices.filter(inv => inv.status === 'transfer_initiated').length;
 
   return (
@@ -276,12 +336,13 @@ const PaymentVerification: React.FC = () => {
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
           <Tab label={`Pending (${pendingInvoices.length})`} />
           <Tab label={`Paid (${paidInvoices.length})`} />
+          <Tab label={`Rejected (${rejectedInvoices.length})`} />
         </Tabs>
       </Box>
 
       <Box sx={{ height: 500, width: '100%' }}>
         <DataGrid
-          rows={tabValue === 0 ? pendingInvoices : paidInvoices}
+          rows={tabValue === 0 ? pendingInvoices : tabValue === 1 ? paidInvoices : rejectedInvoices}
           columns={columns}
           loading={loading}
           getRowId={(row) => row.id}
@@ -327,6 +388,56 @@ const PaymentVerification: React.FC = () => {
           <Button onClick={() => setConfirmDialog(false)}>Cancel</Button>
           <Button onClick={handleConfirmPayment} variant="contained" color="success">
             Confirm Payment
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reject Payment Dialog */}
+      <Dialog open={rejectDialog} onClose={() => setRejectDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Reject Payment</DialogTitle>
+        <DialogContent>
+          {selectedInvoice && (
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to reject this payment?
+              </Typography>
+              <Box mt={2} p={2} bgcolor="background.default" borderRadius={1}>
+                <Typography variant="body2">
+                  <strong>Member:</strong> {selectedInvoice.memberName}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Amount:</strong> €{selectedInvoice.amount}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Description:</strong> {selectedInvoice.description}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Reference:</strong>{' '}
+                  <span style={{ fontFamily: 'monospace' }}>
+                    {selectedInvoice.uniquePaymentReference}
+                  </span>
+                </Typography>
+              </Box>
+              <TextField
+                fullWidth
+                label="Rejection Reason (optional)"
+                placeholder="e.g., Payment not received, incorrect amount..."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                multiline
+                rows={2}
+                sx={{ mt: 2 }}
+              />
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                This will mark the invoice as rejected. The member will need to create a new payment request.
+              </Alert>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRejectDialog(false)}>Cancel</Button>
+          <Button onClick={handleRejectPayment} variant="contained" color="error">
+            Reject Payment
           </Button>
         </DialogActions>
       </Dialog>
