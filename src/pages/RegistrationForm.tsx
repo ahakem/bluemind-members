@@ -28,7 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 import SignaturePad from '../components/SignaturePad';
 import PasswordStrength from '../components/PasswordStrength';
 import PageLayout from '../components/PageLayout';
-import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns } from '../utils/inputValidation';
+import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns, isValidPostalCode, formatDutchPostalCode } from '../utils/inputValidation';
 import { doc, setDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from '../config/firebase';
@@ -186,7 +186,11 @@ const RegistrationForm: React.FC = () => {
       
       if (!formData.street) errors.street = 'Street address is required';
       if (!formData.city) errors.city = 'City is required';
-      if (!formData.postalCode) errors.postalCode = 'Postal code is required';
+      if (!formData.postalCode) {
+        errors.postalCode = 'Postal code is required';
+      } else if (!isValidPostalCode(formData.postalCode, 'NL')) {
+        errors.postalCode = 'Invalid Dutch postal code (e.g., 1234 AB)';
+      }
       
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
@@ -588,12 +592,14 @@ const RegistrationForm: React.FC = () => {
                 label="Postal Code"
                 value={formData.postalCode}
                 onChange={(e) => {
-                  setFormData({ ...formData, postalCode: e.target.value });
+                  const formatted = formatDutchPostalCode(e.target.value);
+                  setFormData({ ...formData, postalCode: formatted });
                   if (fieldErrors.postalCode) setFieldErrors({ ...fieldErrors, postalCode: '' });
                 }}
                 required
                 error={!!fieldErrors.postalCode}
-                helperText={fieldErrors.postalCode}
+                helperText={fieldErrors.postalCode || 'Format: 1234 AB'}
+                inputProps={{ maxLength: 7 }}
               />
             </Grid>
             <Grid item xs={12} sm={3}>

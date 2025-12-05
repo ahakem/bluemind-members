@@ -23,7 +23,7 @@ import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import { Member } from '../../types';
-import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns } from '../../utils/inputValidation';
+import { sanitizeString, sanitizeName, sanitizePhone, hasMaliciousPatterns, isValidPostalCode, formatDutchPostalCode } from '../../utils/inputValidation';
 
 const MemberProfile: React.FC = () => {
   const { currentUser } = useAuth();
@@ -136,6 +136,13 @@ const MemberProfile: React.FC = () => {
     const fieldsToCheck = [formData.nickname, formData.street, formData.city, formData.emergencyName];
     if (fieldsToCheck.some(f => f && hasMaliciousPatterns(f))) {
       setError('Invalid characters detected. Please remove any special scripts.');
+      setSaving(false);
+      return;
+    }
+
+    // Validate Dutch postal code
+    if (formData.postalCode && !isValidPostalCode(formData.postalCode, 'NL')) {
+      setError('Invalid Dutch postal code format (e.g., 1234 AB)');
       setSaving(false);
       return;
     }
@@ -515,7 +522,9 @@ const MemberProfile: React.FC = () => {
                   fullWidth
                   label="Postal Code"
                   value={formData.postalCode}
-                  onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, postalCode: formatDutchPostalCode(e.target.value) })}
+                  helperText="Format: 1234 AB"
+                  inputProps={{ maxLength: 7 }}
                 />
               </Grid>
               <Grid item xs={12} sm={3}>

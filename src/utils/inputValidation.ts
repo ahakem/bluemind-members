@@ -66,11 +66,31 @@ export const sanitizeName = (name: string): string => {
 // Validate postal code (Dutch format or general)
 export const isValidPostalCode = (postalCode: string, country?: string): boolean => {
   if (country === 'Netherlands' || country === 'NL') {
-    // Dutch format: 1234 AB
-    return /^[1-9][0-9]{3}\s?[A-Za-z]{2}$/.test(postalCode);
+    // Dutch format: 1234AB or 1234 AB (4 digits + 2 letters)
+    const cleaned = postalCode.replace(/\s/g, '').toUpperCase();
+    return /^[1-9][0-9]{3}[A-Z]{2}$/.test(cleaned);
   }
   // General: allow alphanumeric with spaces/hyphens
   return /^[A-Za-z0-9\s\-]{3,10}$/.test(postalCode);
+};
+
+// Format Dutch postal code (1234AB -> 1234 AB)
+export const formatDutchPostalCode = (postalCode: string): string => {
+  const cleaned = postalCode.replace(/\s/g, '').toUpperCase();
+  if (/^[1-9][0-9]{3}[A-Z]{2}$/.test(cleaned)) {
+    return `${cleaned.slice(0, 4)} ${cleaned.slice(4)}`;
+  }
+  return postalCode;
+};
+
+// Sanitize postal code
+export const sanitizePostalCode = (postalCode: string, country?: string): string => {
+  if (!postalCode || typeof postalCode !== 'string') return '';
+  const cleaned = postalCode.trim().toUpperCase();
+  if (country === 'Netherlands' || country === 'NL') {
+    return formatDutchPostalCode(cleaned);
+  }
+  return cleaned;
 };
 
 // Validate IBAN
